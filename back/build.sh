@@ -20,3 +20,10 @@ if email and password and not User.objects.filter(email=email).exists():
 else:
     print('Superusuário já existe ou variáveis não definidas.')
 "
+
+if [ "$RUN_SEED" = "true" ]; then
+  echo "==> Populando conteúdo educacional..."
+  python manage.py shell -c "exec(open('scripts/popular_conteudos.py', encoding='utf-8').read())"
+  echo "==> Populando vídeos..."
+  python manage.py shell -c "exec(open('scripts/popular_videos_v2.py', encoding='utf-8').read())"
+fi
