@@ -271,13 +271,13 @@ export function Chat() {
             // ── Tela de boas-vindas (sem conversa ativa) ──
             <div className="h-full flex flex-col items-center justify-center text-center px-4">
               <img
-  src={corefinLogo}
-  alt="CoreFin"
-  className="w-40 h-40 object-contain mb-8"
-/>
-<h1 className="text-5xl text-foreground mb-2">
-  {greeting}{firstName ? `, ${firstName}` : ''}
-</h1>
+                src={corefinLogo}
+                alt="CoreFin"
+                className="w-40 h-40 object-contain mb-8"
+              />
+              <h1 className="text-5xl text-foreground mb-2">
+                {greeting}{firstName ? `, ${firstName}` : ''}
+              </h1>
             </div>
           ) : isLoadingMessages ? (
             <div className="text-center text-muted-foreground py-12">
