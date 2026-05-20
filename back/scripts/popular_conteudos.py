@@ -37,7 +37,7 @@ from apps.education.models import Path, Content, PathContent
 
 DRY_RUN = False           # True = só mostra, não salva
 LIMPAR_ANTES = False      # True = apaga tudo antes (cuidado!)
-PAUSA_ENTRE_REQS = 15      # segundos entre chamadas pro Gemini (rate limit)
+PAUSA_ENTRE_REQS = 120      # segundos entre chamadas pro Gemini (rate limit)
 
 
 # ── ESTRUTURA DAS TRILHAS ────────────────────────────────────────────────────
