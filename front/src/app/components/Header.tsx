@@ -1,99 +1,16 @@
-import { Search, Bell, Moon, Sun, Settings, LogOut, Home, LayoutDashboard, ArrowLeftRight, FileText, Target, GraduationCap, MessageSquare, Shield, Menu } from 'lucide-react';
-import { Link, useNavigate } from 'react-router';
-import { useTheme } from '../contexts/ThemeContext';
-import { useAuth } from '../contexts/AuthContext';
-import { useState, useRef, useEffect } from 'react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
-
-interface SearchItem {
-  name: string;
-  path: string;
-  icon: React.ComponentType<{ className?: string }>;
-  category: string;
-  adminOnly?: boolean;
-}
-
-const searchableItems: SearchItem[] = [
-  { name: 'Início', path: '/home', icon: Home, category: 'Páginas' },
-  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, category: 'Páginas' },
-  { name: 'Transações', path: '/transactions', icon: ArrowLeftRight, category: 'Páginas' },
-  { name: 'Relatórios', path: '/reports', icon: FileText, category: 'Páginas' },
-  { name: 'Metas Financeiras', path: '/goals', icon: Target, category: 'Páginas' },
-  { name: 'Educação Financeira', path: '/education', icon: GraduationCap, category: 'Páginas' },
-  { name: 'CoreChat', path: '/chat', icon: MessageSquare, category: 'Páginas' },
-  { name: 'Configurações', path: '/settings', icon: Settings, category: 'Páginas' },
-  { name: 'Administração', path: '/admin', icon: Shield, category: 'Páginas', adminOnly: true },
-];
-
-interface HeaderProps {
-  onToggleSidebar: () => void;
-  sidebarOpen: boolean;
-}
-
-export function Header({ onToggleSidebar }: HeaderProps) {
-  const { theme, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showResults, setShowResults] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
-
-  // Inicial do nome do usuário (pra avatar)
-  const initial = user?.name?.charAt(0).toUpperCase() || 'U';
-
-  // Label do perfil (admin/viewer mostram o role; user mostra "MEI")
-  const subtitle =
-    user?.role === 'admin' ? 'Administrador' :
-    user?.role === 'viewer' ? 'Visualizador' :
-    'MEI';
-
-  // Filtra a busca pra esconder "Administração" pra usuário comum
-  const isAdminLike = user?.role === 'admin' || user?.role === 'viewer';
-  const filteredItems = searchableItems
-    .filter(item => !item.adminOnly || isAdminLike)
-    .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
-
-  const handleSearchClick = (path: string) => {
-    navigate(path);
-    setSearchQuery('');
-    setShowResults(false);
-  };
-
-  const handleLogout = async () => {
-    await logout();
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setShowResults(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  return (
-    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6">
-      {/* Toggle Sidebar Button */}
+return (
+    <header className="h-16 bg-card border-b border-border flex items-center justify-between gap-2 px-4 sm:px-6">
+      {/* Toggle Sidebar Button — só no mobile */}
       <button
         onClick={onToggleSidebar}
-        className="p-2 rounded-lg hover:bg-accent transition-colors mr-4"
-        aria-label="Toggle sidebar"
+        className="p-2 rounded-lg hover:bg-accent transition-colors lg:hidden flex-shrink-0"
+        aria-label="Abrir menu"
       >
         <Menu className="w-5 h-5 text-foreground" />
       </button>
 
       {/* Search */}
-      <div className="flex-1 max-w-md" ref={searchRef}>
+      <div className="flex-1 min-w-0 max-w-md" ref={searchRef}>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -141,7 +58,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1 sm:gap-4 flex-shrink-0">
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
@@ -165,7 +82,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white flex-shrink-0">
                 {initial}
               </div>
               <div className="text-left hidden md:block">
@@ -195,4 +112,3 @@ export function Header({ onToggleSidebar }: HeaderProps) {
       </div>
     </header>
   );
-}
