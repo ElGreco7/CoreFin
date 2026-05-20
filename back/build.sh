@@ -24,6 +24,6 @@ else:
 if [ "$RUN_SEED" = "true" ]; then
   echo "==> Populando conteúdo educacional..."
   python manage.py shell -c "exec(open('scripts/popular_conteudos.py', encoding='utf-8').read())"
-  echo "==> Populando vídeos..."
-  python manage.py shell -c "exec(open('scripts/popular_videos_v2.py', encoding='utf-8').read())"
+  echo "==> Resetando e repopulando vídeos verificados..."
+  python manage.py shell -c "exec(open('scripts/reset_videos.py', encoding='utf-8').read())"
 fi
