@@ -6,6 +6,7 @@ import {
   Clock,
   User,
   Trash2,
+  ArrowLeft,
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import corefinLogo from '../../imports/logo_icone_corefin_(1).png';
@@ -61,6 +62,10 @@ export function Chat() {
   const [isTyping, setIsTyping] = useState(false);
   const [sending, setSending] = useState(false);
 
+  // Controla qual painel aparece no mobile: 'list' (lista de conversas)
+  // ou 'chat' (janela da conversa). No desktop os dois aparecem sempre.
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Carrega lista de conversas ao montar
@@ -87,6 +92,7 @@ export function Chat() {
 
   async function loadConversation(conv: Conversation) {
     setActiveConversation(conv);
+    setMobileView('chat');
     setIsLoadingMessages(true);
     try {
       const full = await chat.getConversation(conv.id);
@@ -102,6 +108,7 @@ export function Chat() {
     setActiveConversation(null);
     setMessages([]);
     setInputValue('');
+    setMobileView('chat');
   }
 
   async function handleSendMessage(content?: string) {
@@ -179,9 +186,13 @@ export function Chat() {
   const greeting = getGreeting();
 
   return (
-    <div className="h-[calc(100vh-80px)] flex gap-6 p-8">
-      {/* Sidebar - Conversations History */}
-      <div className="w-80 flex flex-col gap-4">
+    <div className="h-[calc(100vh-64px)] flex flex-col lg:flex-row gap-4 lg:gap-6 p-4 lg:p-8">
+      {/* Sidebar - Conversations History.
+          Mobile: ocupa a tela toda, escondida quando mobileView === 'chat'.
+          Desktop: largura fixa, sempre visível. */}
+      <div
+        className={`${mobileView === 'chat' ? 'hidden' : 'flex'} lg:flex w-full lg:w-80 flex-col gap-4 min-h-0`}
+      >
         <Button
           variant="primary"
           className="w-full gap-2"
@@ -191,7 +202,7 @@ export function Chat() {
           Nova Conversa
         </Button>
 
-        <div className="flex-1 bg-card rounded-xl border border-border overflow-hidden flex flex-col">
+        <div className="flex-1 bg-card rounded-xl border border-border overflow-hidden flex flex-col min-h-0">
           <div className="p-4 border-b border-border">
             <h3 className="text-foreground flex items-center gap-2">
               <MessageSquare className="w-5 h-5" />
@@ -250,32 +261,50 @@ export function Chat() {
         </div>
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-card rounded-xl border border-border overflow-hidden">
+      {/* Main Chat Area.
+          Mobile: ocupa a tela toda, escondida quando mobileView === 'list'.
+          Desktop: ocupa o espaço restante, sempre visível. */}
+      <div
+        className={`${mobileView === 'list' ? 'hidden' : 'flex'} lg:flex flex-1 flex-col bg-card rounded-xl border border-border overflow-hidden min-h-0`}
+      >
         {/* Chat Header */}
-        <div className="p-6 border-b border-border bg-gradient-to-r from-primary/5 to-secondary/5">
-          <div className="flex items-center gap-1">
-            <img src={corefinLogo} alt="CoreFin" className="w-20 h-20 object-contain" />
-            <div>
-              <h2 className="text-2xl text-foreground">
+        <div className="p-4 lg:p-6 border-b border-border bg-gradient-to-r from-primary/5 to-secondary/5">
+          <div className="flex items-center gap-2 lg:gap-1">
+            {/* Botão voltar - só no mobile */}
+            <button
+              onClick={() => setMobileView('list')}
+              className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-accent transition-colors flex-shrink-0"
+              aria-label="Voltar para conversas"
+            >
+              <ArrowLeft className="w-5 h-5 text-foreground" />
+            </button>
+            <img
+              src={corefinLogo}
+              alt="CoreFin"
+              className="w-12 h-12 lg:w-20 lg:h-20 object-contain flex-shrink-0"
+            />
+            <div className="min-w-0">
+              <h2 className="text-xl lg:text-2xl text-foreground truncate">
                 {activeConversation?.title || 'CoreChat'}
               </h2>
-              <p className="text-sm text-muted-foreground">Assistente Financeiro Inteligente</p>
+              <p className="text-sm text-muted-foreground truncate">
+                Assistente Financeiro Inteligente
+              </p>
             </div>
           </div>
         </div>
 
         {/* Messages Area / Tela de boas-vindas */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 min-h-0">
           {showWelcome ? (
             // ── Tela de boas-vindas (sem conversa ativa) ──
             <div className="h-full flex flex-col items-center justify-center text-center px-4">
               <img
                 src={corefinLogo}
                 alt="CoreFin"
-                className="w-40 h-40 object-contain mb-8"
+                className="w-24 h-24 lg:w-40 lg:h-40 object-contain mb-6 lg:mb-8"
               />
-              <h1 className="text-5xl text-foreground mb-2">
+              <h1 className="text-3xl lg:text-5xl text-foreground mb-2">
                 {greeting}{firstName ? `, ${firstName}` : ''}
               </h1>
             </div>
@@ -287,23 +316,23 @@ export function Chat() {
             messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex gap-4 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex gap-2 lg:gap-4 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {message.sender === 'assistant' && (
                   <img
                     src={corefinLogo}
                     alt="CoreFin"
-                    className="w-12 h-12 object-contain flex-shrink-0"
+                    className="w-9 h-9 lg:w-12 lg:h-12 object-contain flex-shrink-0"
                   />
                 )}
                 <div
-                  className={`max-w-2xl rounded-2xl px-4 py-3 ${
+                  className={`max-w-[80%] lg:max-w-2xl rounded-2xl px-4 py-3 ${
                     message.sender === 'user'
                       ? 'bg-primary text-white'
                       : 'bg-accent text-foreground'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <p className="whitespace-pre-wrap break-words">{message.content}</p>
                   <span
                     className={`text-xs mt-2 block ${
                       message.sender === 'user' ? 'text-white/70' : 'text-muted-foreground'
@@ -313,8 +342,8 @@ export function Chat() {
                   </span>
                 </div>
                 {message.sender === 'user' && (
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                    <User className="w-6 h-6 text-muted-foreground" />
+                  <div className="w-9 h-9 lg:w-12 lg:h-12 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                    <User className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground" />
                   </div>
                 )}
               </div>
@@ -323,11 +352,11 @@ export function Chat() {
 
           {/* Indicador "pensando" */}
           {isTyping && (
-            <div className="flex gap-4 justify-start">
+            <div className="flex gap-2 lg:gap-4 justify-start">
               <img
                 src={corefinLogo}
                 alt="CoreFin"
-                className="w-12 h-12 object-contain flex-shrink-0 animate-pulse"
+                className="w-9 h-9 lg:w-12 lg:h-12 object-contain flex-shrink-0 animate-pulse"
               />
               <div className="bg-accent text-foreground rounded-2xl px-4 py-3 flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Pensando</span>
@@ -354,8 +383,8 @@ export function Chat() {
         </div>
 
         {/* Input Area */}
-        <div className="p-6 border-t border-border">
-          <div className="flex gap-3">
+        <div className="p-4 lg:p-6 border-t border-border">
+          <div className="flex gap-2 lg:gap-3">
             <input
               type="text"
               placeholder="Digite sua mensagem..."
@@ -368,16 +397,16 @@ export function Chat() {
                 }
               }}
               disabled={sending}
-              className="flex-1 px-4 py-3 bg-accent border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
+              className="flex-1 min-w-0 px-4 py-3 bg-accent border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
             />
             <Button
               variant="primary"
               onClick={() => handleSendMessage()}
               disabled={!inputValue.trim() || sending}
-              className="gap-2 px-6"
+              className="gap-2 px-4 lg:px-6 flex-shrink-0"
             >
               <Send className="w-5 h-5" />
-              {sending ? 'Enviando...' : 'Enviar'}
+              <span className="hidden sm:inline">{sending ? 'Enviando...' : 'Enviar'}</span>
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
