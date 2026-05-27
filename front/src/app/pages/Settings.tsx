@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   User,
   Palette,
@@ -14,11 +14,26 @@ import {
   Sun,
   LogOut,
   KeyRound,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { CategoryManager } from '../components/CategoryManager';
+import { auth } from '../services/auth';
+import { ApiError } from '../services/api';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 
 type TabType =
   | 'profile'
@@ -29,22 +44,59 @@ type TabType =
   | 'preferences'
   | 'account';
 
+// Tipo do feedback mostrado abaixo de cada formulário.
+type Feedback = { kind: 'success' | 'error'; message: string } | null;
+
 export function Settings() {
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const { theme, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
 
-  // Profile state (placeholder — vai conectar com backend em outra fase)
+  // ─── Perfil ────────────────────────────────────────────────────────────────
+  // Todos os campos agora são persistidos no backend
+  // (name, business_name, phone, cnpj, address).
   const [profileData, setProfileData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
+    name: '',
+    email: '',
     phone: '',
-    company: user?.business_name || '',
+    company: '',
     cnpj: '',
     address: '',
   });
 
-  // Notification settings (placeholder)
+  // Sincroniza o formulário com o user assim que ele carrega no contexto.
+  // (Settings pode montar antes do AuthProvider terminar a chamada inicial.)
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        company: user.business_name || '',
+        cnpj: user.cnpj || '',
+        address: user.address || '',
+      });
+    }
+  }, [user]);
+
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState<Feedback>(null);
+  const [confirmProfileOpen, setConfirmProfileOpen] = useState(false);
+
+  // ─── Troca de senha ────────────────────────────────────────────────────────
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: '',
+  });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordFeedback, setPasswordFeedback] = useState<Feedback>(null);
+  const [confirmPasswordOpen, setConfirmPasswordOpen] = useState(false);
+
+  // ─── Logout ────────────────────────────────────────────────────────────────
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+
+  // ─── Estados auxiliares (placeholders mantidos) ────────────────────────────
   const [notificationSettings, setNotificationSettings] = useState({
     emailNotifications: true,
     pushNotifications: true,
@@ -54,14 +106,6 @@ export function Settings() {
     marketingEmails: false,
   });
 
-  // Security settings (placeholder)
-  const [securitySettings, setSecuritySettings] = useState({
-    twoFactorAuth: false,
-    sessionTimeout: '30',
-    loginAlerts: true,
-  });
-
-  // Preferences (placeholder)
   const [preferences, setPreferences] = useState({
     currency: 'BRL',
     language: 'pt-BR',
@@ -79,17 +123,143 @@ export function Settings() {
     { id: 'account' as TabType, label: 'Conta', icon: KeyRound },
   ];
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  // ─── Handlers de Perfil ────────────────────────────────────────────────────
+
+  // Submit do formulário só abre o diálogo de confirmação.
+  const handleSubmitProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: conectar com PATCH /api/auth/me/
-    console.log('Saving profile:', profileData);
+    setProfileFeedback(null);
+
+    if (!profileData.name.trim()) {
+      setProfileFeedback({ kind: 'error', message: 'O nome é obrigatório.' });
+      return;
+    }
+
+    setConfirmProfileOpen(true);
   };
+
+  // Só executa quando o usuário confirma no diálogo.
+  const handleConfirmSaveProfile = async () => {
+    setConfirmProfileOpen(false);
+    setProfileSaving(true);
+    setProfileFeedback(null);
+
+    try {
+      const updated = await auth.updateProfile({
+        name: profileData.name.trim(),
+        business_name: profileData.company.trim(),
+        phone: profileData.phone.trim(),
+        cnpj: profileData.cnpj.trim(),
+        address: profileData.address.trim(),
+      });
+      // Atualiza o contexto imediatamente — Header e Home recebem o novo nome.
+      setUser(updated);
+      setProfileFeedback({
+        kind: 'success',
+        message: 'Perfil atualizado com sucesso.',
+      });
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : 'Não foi possível salvar. Tente novamente.';
+      setProfileFeedback({ kind: 'error', message: msg });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  // ─── Handlers de Senha ─────────────────────────────────────────────────────
+
+  const handleSubmitPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordFeedback(null);
+
+    if (
+      !passwordForm.current_password ||
+      !passwordForm.new_password ||
+      !passwordForm.confirm_password
+    ) {
+      setPasswordFeedback({
+        kind: 'error',
+        message: 'Preencha todos os campos.',
+      });
+      return;
+    }
+
+    if (passwordForm.new_password.length < 8) {
+      setPasswordFeedback({
+        kind: 'error',
+        message: 'A nova senha precisa ter pelo menos 8 caracteres.',
+      });
+      return;
+    }
+
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setPasswordFeedback({
+        kind: 'error',
+        message: 'A confirmação não bate com a nova senha.',
+      });
+      return;
+    }
+
+    if (passwordForm.new_password === passwordForm.current_password) {
+      setPasswordFeedback({
+        kind: 'error',
+        message: 'A nova senha precisa ser diferente da atual.',
+      });
+      return;
+    }
+
+    setConfirmPasswordOpen(true);
+  };
+
+  const handleConfirmChangePassword = async () => {
+    setConfirmPasswordOpen(false);
+    setPasswordSaving(true);
+    setPasswordFeedback(null);
+
+    try {
+      await auth.changePassword({
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password,
+      });
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        confirm_password: '',
+      });
+      setPasswordFeedback({
+        kind: 'success',
+        message: 'Senha alterada com sucesso.',
+      });
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : 'Não foi possível alterar a senha.';
+      setPasswordFeedback({ kind: 'error', message: msg });
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  // ─── Logout ────────────────────────────────────────────────────────────────
+
+  const handleConfirmLogout = async () => {
+    setConfirmLogoutOpen(false);
+    await logout();
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl text-foreground mb-2">Configurações</h1>
-        <p className="text-muted-foreground">Gerencie suas preferências e configurações da conta</p>
+        <p className="text-muted-foreground">
+          Gerencie suas preferências e configurações da conta
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -119,21 +289,27 @@ export function Settings() {
         {/* Content Area */}
         <div className="lg:col-span-3">
           <div className="bg-card rounded-xl border border-border p-8">
-            {/* Profile Tab */}
+            {/* ───── Profile Tab ───── */}
             {activeTab === 'profile' && (
               <div>
-                <h2 className="text-2xl text-foreground mb-6">Informações do Perfil</h2>
-                <form onSubmit={handleSaveProfile} className="space-y-6">
+                <h2 className="text-2xl text-foreground mb-6">
+                  Informações do Perfil
+                </h2>
+                <form onSubmit={handleSubmitProfile} className="space-y-6">
                   <div>
                     <h3 className="text-lg text-foreground mb-4">Dados Pessoais</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label htmlFor="name" className="block text-foreground mb-2">Nome Completo</label>
+                        <label htmlFor="name" className="block text-foreground mb-2">
+                          Nome Completo
+                        </label>
                         <input
                           id="name"
                           type="text"
                           value={profileData.name}
-                          onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                          onChange={(e) =>
+                            setProfileData({ ...profileData, name: e.target.value })
+                          }
                           className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
@@ -159,7 +335,9 @@ export function Settings() {
                           id="phone"
                           type="tel"
                           value={profileData.phone}
-                          onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                          onChange={(e) =>
+                            setProfileData({ ...profileData, phone: e.target.value })
+                          }
                           className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
@@ -167,7 +345,9 @@ export function Settings() {
                   </div>
 
                   <div>
-                    <h3 className="text-lg text-foreground mb-4">Informações da Empresa</h3>
+                    <h3 className="text-lg text-foreground mb-4">
+                      Informações da Empresa
+                    </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label htmlFor="company" className="block text-foreground mb-2">
@@ -178,47 +358,73 @@ export function Settings() {
                           id="company"
                           type="text"
                           value={profileData.company}
-                          onChange={(e) => setProfileData({ ...profileData, company: e.target.value })}
+                          onChange={(e) =>
+                            setProfileData({ ...profileData, company: e.target.value })
+                          }
                           className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
                       <div>
-                        <label htmlFor="cnpj" className="block text-foreground mb-2">CNPJ</label>
+                        <label htmlFor="cnpj" className="block text-foreground mb-2">
+                          CNPJ
+                        </label>
                         <input
                           id="cnpj"
                           type="text"
                           value={profileData.cnpj}
-                          onChange={(e) => setProfileData({ ...profileData, cnpj: e.target.value })}
+                          onChange={(e) =>
+                            setProfileData({ ...profileData, cnpj: e.target.value })
+                          }
                           className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
                       <div className="md:col-span-2">
-                        <label htmlFor="address" className="block text-foreground mb-2">Endereço</label>
+                        <label htmlFor="address" className="block text-foreground mb-2">
+                          Endereço
+                        </label>
                         <input
                           id="address"
                           type="text"
                           value={profileData.address}
-                          onChange={(e) => setProfileData({ ...profileData, address: e.target.value })}
+                          onChange={(e) =>
+                            setProfileData({ ...profileData, address: e.target.value })
+                          }
                           className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
                     </div>
                   </div>
 
+                  {profileFeedback && <FeedbackBanner feedback={profileFeedback} />}
+
                   <div className="flex justify-end pt-4">
-                    <Button type="submit" variant="primary" className="gap-2">
-                      <Save className="w-5 h-5" />
-                      Salvar Alterações
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      className="gap-2"
+                      disabled={profileSaving}
+                    >
+                      {profileSaving ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-5 h-5" />
+                          Salvar Alterações
+                        </>
+                      )}
                     </Button>
                   </div>
                 </form>
               </div>
             )}
 
-            {/* Categories Tab — usa o CategoryManager */}
+            {/* ───── Categories ───── */}
             {activeTab === 'categories' && <CategoryManager />}
 
-            {/* Appearance Tab */}
+            {/* ───── Appearance ───── */}
             {activeTab === 'appearance' && (
               <div>
                 <h2 className="text-2xl text-foreground mb-6">Aparência</h2>
@@ -236,7 +442,11 @@ export function Settings() {
                           : 'border-border bg-accent hover:border-primary/50'
                       }`}
                     >
-                      <Sun className={`w-8 h-8 mx-auto mb-3 ${theme === 'light' ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <Sun
+                        className={`w-8 h-8 mx-auto mb-3 ${
+                          theme === 'light' ? 'text-primary' : 'text-muted-foreground'
+                        }`}
+                      />
                       <div className="text-center text-foreground">Modo Claro</div>
                     </button>
                     <button
@@ -247,7 +457,11 @@ export function Settings() {
                           : 'border-border bg-accent hover:border-primary/50'
                       }`}
                     >
-                      <Moon className={`w-8 h-8 mx-auto mb-3 ${theme === 'dark' ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <Moon
+                        className={`w-8 h-8 mx-auto mb-3 ${
+                          theme === 'dark' ? 'text-primary' : 'text-muted-foreground'
+                        }`}
+                      />
                       <div className="text-center text-foreground">Modo Escuro</div>
                     </button>
                   </div>
@@ -255,14 +469,21 @@ export function Settings() {
               </div>
             )}
 
-            {/* Notifications Tab (mantido como estava — placeholder) */}
+            {/* ───── Notifications (placeholder) ───── */}
             {activeTab === 'notifications' && (
               <div>
-                <h2 className="text-2xl text-foreground mb-6">Preferências de Notificações</h2>
-                <p className="text-muted-foreground mb-4">Em breve: integração com preferências do usuário.</p>
+                <h2 className="text-2xl text-foreground mb-6">
+                  Preferências de Notificações
+                </h2>
+                <p className="text-muted-foreground mb-4">
+                  Em breve: integração com preferências do usuário.
+                </p>
                 <div className="space-y-6">
                   {Object.entries(notificationSettings).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between p-4 bg-accent rounded-lg">
+                    <div
+                      key={key}
+                      className="flex items-center justify-between p-4 bg-accent rounded-lg"
+                    >
                       <div className="flex-1">
                         <div className="text-foreground">{key}</div>
                       </div>
@@ -271,7 +492,10 @@ export function Settings() {
                           type="checkbox"
                           checked={value}
                           onChange={(e) =>
-                            setNotificationSettings({ ...notificationSettings, [key]: e.target.checked })
+                            setNotificationSettings({
+                              ...notificationSettings,
+                              [key]: e.target.checked,
+                            })
                           }
                           className="sr-only peer"
                         />
@@ -283,31 +507,131 @@ export function Settings() {
               </div>
             )}
 
-            {/* Security Tab (mantido como estava) */}
+            {/* ───── Security: troca de senha (funcional) ───── */}
             {activeTab === 'security' && (
               <div>
                 <h2 className="text-2xl text-foreground mb-6">Segurança</h2>
-                <p className="text-muted-foreground mb-4">Em breve: 2FA, alertas de login e tempo de sessão.</p>
-                <Button variant="outline" className="w-full">
-                  Alterar Senha
-                </Button>
+                <div className="space-y-6 max-w-xl">
+                  <div>
+                    <h3 className="text-lg text-foreground mb-4">Alterar Senha</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Informe sua senha atual e escolha uma nova com pelo menos 8 caracteres.
+                    </p>
+                    <form onSubmit={handleSubmitPassword} className="space-y-4">
+                      <div>
+                        <label
+                          htmlFor="current_password"
+                          className="block text-foreground mb-2"
+                        >
+                          Senha Atual
+                        </label>
+                        <input
+                          id="current_password"
+                          type="password"
+                          autoComplete="current-password"
+                          value={passwordForm.current_password}
+                          onChange={(e) =>
+                            setPasswordForm({
+                              ...passwordForm,
+                              current_password: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="new_password"
+                          className="block text-foreground mb-2"
+                        >
+                          Nova Senha
+                        </label>
+                        <input
+                          id="new_password"
+                          type="password"
+                          autoComplete="new-password"
+                          value={passwordForm.new_password}
+                          onChange={(e) =>
+                            setPasswordForm({
+                              ...passwordForm,
+                              new_password: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="confirm_password"
+                          className="block text-foreground mb-2"
+                        >
+                          Confirmar Nova Senha
+                        </label>
+                        <input
+                          id="confirm_password"
+                          type="password"
+                          autoComplete="new-password"
+                          value={passwordForm.confirm_password}
+                          onChange={(e) =>
+                            setPasswordForm({
+                              ...passwordForm,
+                              confirm_password: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+
+                      {passwordFeedback && (
+                        <FeedbackBanner feedback={passwordFeedback} />
+                      )}
+
+                      <div className="flex justify-end pt-2">
+                        <Button
+                          type="submit"
+                          variant="primary"
+                          className="gap-2"
+                          disabled={passwordSaving}
+                        >
+                          {passwordSaving ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              Alterando...
+                            </>
+                          ) : (
+                            <>
+                              <KeyRound className="w-5 h-5" />
+                              Alterar Senha
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Preferences Tab (mantido como estava) */}
+            {/* ───── Preferences (placeholder) ───── */}
             {activeTab === 'preferences' && (
               <div>
-                <h2 className="text-2xl text-foreground mb-6">Preferências do Sistema</h2>
+                <h2 className="text-2xl text-foreground mb-6">
+                  Preferências do Sistema
+                </h2>
                 <p className="text-muted-foreground mb-4">
                   Em breve: salvamento das preferências no servidor (moeda, idioma, formato de data).
                 </p>
                 <div className="space-y-6">
                   <div>
-                    <label htmlFor="currency" className="block text-foreground mb-2">Moeda Padrão</label>
+                    <label htmlFor="currency" className="block text-foreground mb-2">
+                      Moeda Padrão
+                    </label>
                     <select
                       id="currency"
                       value={preferences.currency}
-                      onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
+                      onChange={(e) =>
+                        setPreferences({ ...preferences, currency: e.target.value })
+                      }
                       className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground"
                     >
                       <option value="BRL">Real Brasileiro (R$)</option>
@@ -319,10 +643,12 @@ export function Settings() {
               </div>
             )}
 
-            {/* Account Tab */}
+            {/* ───── Account / Logout ───── */}
             {activeTab === 'account' && (
               <div>
-                <h2 className="text-2xl text-foreground mb-6">Configurações da Conta</h2>
+                <h2 className="text-2xl text-foreground mb-6">
+                  Configurações da Conta
+                </h2>
                 <div className="space-y-6">
                   <div className="p-6 bg-accent rounded-lg">
                     <div className="flex items-center gap-4 mb-4">
@@ -344,7 +670,7 @@ export function Settings() {
                     <Button
                       variant="outline"
                       className="gap-2 w-full md:w-auto"
-                      onClick={() => logout()}
+                      onClick={() => setConfirmLogoutOpen(true)}
                     >
                       <LogOut className="w-5 h-5" />
                       Sair da Conta
@@ -356,6 +682,81 @@ export function Settings() {
           </div>
         </div>
       </div>
+
+      {/* ─── Diálogos de confirmação ─── */}
+
+      <AlertDialog open={confirmProfileOpen} onOpenChange={setConfirmProfileOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Salvar alterações no perfil?</AlertDialogTitle>
+            <AlertDialogDescription>
+              As novas informações ficarão visíveis em toda a aplicação.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSaveProfile}>
+              Salvar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmPasswordOpen} onOpenChange={setConfirmPasswordOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar troca de senha?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você precisará usar a nova senha no próximo login.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmChangePassword}>
+              Trocar senha
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmLogoutOpen} onOpenChange={setConfirmLogoutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair da conta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você precisará entrar novamente com seu e-mail e senha.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmLogout}>Sair</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/**
+ * Banner de feedback (sucesso/erro) — usado abaixo dos formulários.
+ */
+function FeedbackBanner({ feedback }: { feedback: NonNullable<Feedback> }) {
+  const isSuccess = feedback.kind === 'success';
+  return (
+    <div
+      role="status"
+      className={`flex items-start gap-2 px-4 py-3 rounded-lg border text-sm ${
+        isSuccess
+          ? 'bg-secondary/10 border-secondary/30 text-secondary'
+          : 'bg-destructive/10 border-destructive/30 text-destructive'
+      }`}
+    >
+      {isSuccess ? (
+        <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      ) : (
+        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      )}
+      <span>{feedback.message}</span>
     </div>
   );
 }

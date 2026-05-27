@@ -51,6 +51,28 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         help_text="Nome do negócio/empresa (preenchido pelo MEI no cadastro).",
     )
 
+    # ── Dados de contato/empresa (opcionais, preenchidos em Configurações) ───
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Telefone de contato do usuário.",
+    )
+
+    cnpj = models.CharField(
+        max_length=18,  # formato XX.XXX.XXX/XXXX-XX = 18 chars
+        blank=True,
+        default="",
+        help_text="CNPJ do MEI (apenas dígitos ou formatado).",
+    )
+
+    address = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Endereço completo do usuário/empresa.",
+    )
+
     role = models.CharField(
         max_length=10,
         choices=Role.choices,

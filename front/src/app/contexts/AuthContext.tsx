@@ -4,7 +4,7 @@
  * Compartilha o usuário logado entre todos os componentes.
  *
  * Uso:
- *   const { user, logout, refresh } = useAuth();
+ *   const { user, logout, refresh, setUser } = useAuth();
  */
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { useNavigate } from 'react-router';
@@ -15,6 +15,10 @@ interface AuthContextValue {
   loading: boolean;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  // Atualiza diretamente o usuário no contexto.
+  // Útil quando já temos o User em mãos (login, updateProfile)
+  // e queremos evitar uma chamada extra a /auth/me/.
+  setUser: (user: User | null) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -39,14 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Faz logout completo: backend + localStorage + redireciona
+  // Limpa o user IMEDIATAMENTE para evitar que o nome do usuário anterior
+  // apareça brevemente quando outro usuário logar em seguida.
   const logout = async () => {
-    await auth.logout();
     setUser(null);
+    await auth.logout();
     navigate('/login', { replace: true });
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, logout, refresh, setUser }}>
       {children}
     </AuthContext.Provider>
   );

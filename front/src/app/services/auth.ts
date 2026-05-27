@@ -12,6 +12,9 @@ export interface User {
   name: string;
   business_name?: string;
   email: string;
+  phone?: string;
+  cnpj?: string;
+  address?: string;
   created_at: string;
   role?: "admin" | "user" | "viewer";
 }
@@ -26,6 +29,21 @@ interface RegisterPayload {
   business_name?: string;
   email: string;
   password: string;
+}
+
+// Campos editáveis no perfil. O backend (UserSerializer) permite alterar
+// name, business_name, phone, cnpj e address — email/role/created_at são read-only.
+export interface UpdateProfilePayload {
+  name?: string;
+  business_name?: string;
+  phone?: string;
+  cnpj?: string;
+  address?: string;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
 }
 
 // ── Funções ─────────────────────────────────────────────────────────────────
@@ -113,6 +131,28 @@ function isAuthenticated(): boolean {
   return !!tokens.getAccess();
 }
 
+/**
+ * Atualiza dados do perfil do usuário logado.
+ * Campos editáveis: name, business_name, phone, cnpj, address.
+ * Retorna o usuário atualizado.
+ *
+ * @throws ApiError em caso de erro de validação ou autenticação
+ */
+async function updateProfile(payload: UpdateProfilePayload): Promise<User> {
+  const user = await api.patch<User>("/auth/me/", payload);
+  return user;
+}
+
+/**
+ * Troca a senha do usuário logado.
+ * Requer a senha atual + a nova senha (mínimo 8 caracteres).
+ *
+ * @throws ApiError 400 se a senha atual estiver errada ou a nova for igual à atual
+ */
+async function changePassword(payload: ChangePasswordPayload): Promise<void> {
+  await api.post("/auth/change-password/", payload);
+}
+
 // ── Export único ────────────────────────────────────────────────────────────
 export const auth = {
   login,
@@ -120,4 +160,6 @@ export const auth = {
   logout,
   getCurrentUser,
   isAuthenticated,
+  updateProfile,
+  changePassword,
 };

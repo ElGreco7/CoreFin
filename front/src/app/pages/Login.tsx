@@ -3,10 +3,12 @@ import { Link, useNavigate, useLocation } from 'react-router';
 import coreFinLogo from 'figma:asset/1b6285e9fbc6384159f09ff618cf0c6f8f538e31.png';
 import { auth } from '../services/auth';
 import { ApiError } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { setUser } = useAuth();
   const successMessage = (location.state as { message?: string } | null)?.message;
 
   const [email, setEmail] = useState('');
@@ -20,7 +22,12 @@ export function Login() {
     setLoading(true);
 
     try {
-      await auth.login(email, password);
+      // auth.login() já retorna o User recém-buscado em /auth/me/.
+      // Atualizamos o contexto IMEDIATAMENTE pra evitar que o nome
+      // do usuário anterior apareça por alguns instantes na Home
+      // (caso o AuthContext ainda esteja com o estado antigo).
+      const loggedUser = await auth.login(email, password);
+      setUser(loggedUser);
       navigate('/home');
     } catch (err) {
       if (err instanceof ApiError) {

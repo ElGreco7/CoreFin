@@ -24,12 +24,39 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """Leitura/atualização do perfil do usuário autenticado."""
+    """
+    Leitura/atualização do perfil do usuário autenticado.
+
+    Campos editáveis via PATCH /api/auth/me/:
+      - name
+      - business_name
+      - phone
+      - cnpj
+      - address
+
+    Campos read-only: id, email, role, created_at.
+    """
 
     class Meta:
         model = User
-        fields = ("id", "name", "business_name", "email", "role", "created_at")
+        fields = (
+            "id",
+            "name",
+            "business_name",
+            "email",
+            "phone",
+            "cnpj",
+            "address",
+            "role",
+            "created_at",
+        )
         read_only_fields = ("id", "email", "role", "created_at")
+        extra_kwargs = {
+            "business_name": {"required": False, "allow_blank": True},
+            "phone": {"required": False, "allow_blank": True},
+            "cnpj": {"required": False, "allow_blank": True},
+            "address": {"required": False, "allow_blank": True},
+        }
 
 
 # ── Recuperação de senha ─────────────────────────────────────────────────────
