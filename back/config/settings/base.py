@@ -2,6 +2,7 @@
 config/settings/base.py
 Settings compartilhados entre todos os ambientes.
 """
+import os
 from pathlib import Path
 from decouple import config
 
@@ -147,3 +148,13 @@ SPECTACULAR_SETTINGS = {
 # ── IA — Gemini ────────────────────────────────────────────────────────
 GEMINI_API_KEY = config("GEMINI_API_KEY", default="")
 GEMINI_MODEL = config("GEMINI_MODEL", default="gemini-2.0-flash")
+
+# ── E-mail ────────────────────────────────────────────────────────────────────
+EMAIL_BACKEND       = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST          = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT          = int(os.environ.get("EMAIL_PORT", 587))
+EMAIL_USE_TLS       = True
+EMAIL_HOST_USER     = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL  = os.environ.get("DEFAULT_FROM_EMAIL", f"CoreFin <{EMAIL_HOST_USER}>")
+FRONTEND_URL        = os.environ.get("FRONTEND_URL", "http://localhost:5173")

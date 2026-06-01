@@ -22,6 +22,8 @@ import { AdminAnalytics } from './pages/AdminAnalytics';
 import { AdminSettings } from './pages/AdminSettings';
 import { Settings } from './pages/Settings';
 import { Notifications } from './pages/Notifications';
+import { ForgotPassword } from './pages/ForgotPassword'; // ← NOVO
+import { CashClose } from './pages/CashClose';           // ← NOVO
 
 function RootLayout() {
   return (
@@ -38,8 +40,9 @@ export const router = createBrowserRouter([
     children: [
       // ── Rotas públicas ─────────────────────────────────────
       { index: true, element: <Navigate to="/login" replace /> },
-      { path: 'login', element: <Login /> },
-      { path: 'signup', element: <Signup /> },
+      { path: 'login',            element: <Login /> },
+      { path: 'signup',           element: <Signup /> },
+      { path: 'recuperar-senha',  element: <ForgotPassword /> }, // ← NOVO
 
       // ── Rotas privadas (exigem login) ─────────────────────
       {
@@ -49,19 +52,20 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: 'home', element: <Home /> },
-          { path: 'dashboard', element: <Dashboard /> },
-          { path: 'transactions', element: <Transactions /> },
-          { path: 'transactions/new', element: <NewTransaction /> },
-          { path: 'reports', element: <Reports /> },
-          { path: 'goals', element: <Goals /> },
-          { path: 'goals/new', element: <NewGoal /> },
-          { path: 'education', element: <Education /> },
-          { path: 'education/path/:id', element: <PathDetail /> },
+          { path: 'home',              element: <Home /> },
+          { path: 'dashboard',         element: <Dashboard /> },
+          { path: 'transactions',      element: <Transactions /> },
+          { path: 'transactions/new',  element: <NewTransaction /> },
+          { path: 'cash-close',        element: <CashClose /> },  // ← NOVO
+          { path: 'reports',           element: <Reports /> },
+          { path: 'goals',             element: <Goals /> },
+          { path: 'goals/new',         element: <NewGoal /> },
+          { path: 'education',         element: <Education /> },
+          { path: 'education/path/:id',    element: <PathDetail /> },
           { path: 'education/content/:id', element: <ContentDetail /> },
-          { path: 'chat', element: <Chat /> },
-          { path: 'settings', element: <Settings /> },
-          { path: 'notifications', element: <Notifications /> },
+          { path: 'chat',              element: <Chat /> },
+          { path: 'settings',          element: <Settings /> },
+          { path: 'notifications',     element: <Notifications /> },
 
           {
             path: 'admin',

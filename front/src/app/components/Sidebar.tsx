@@ -7,7 +7,8 @@ import {
   Target,
   GraduationCap,
   MessageSquare,
-  Shield
+  Shield,
+  Calculator, // ← NOVO
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,13 +20,14 @@ interface NavItem {
 }
 
 const mainNavItems: NavItem[] = [
-  { name: 'Início', path: '/home', icon: Home },
-  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { name: 'Transações', path: '/transactions', icon: ArrowLeftRight },
-  { name: 'Relatórios', path: '/reports', icon: FileText },
-  { name: 'Metas Financeiras', path: '/goals', icon: Target },
-  { name: 'Educação Financeira', path: '/education', icon: GraduationCap },
-  { name: 'CoreChat', path: '/chat', icon: MessageSquare },
+  { name: 'Início',              path: '/home',        icon: Home },
+  { name: 'Dashboard',           path: '/dashboard',   icon: LayoutDashboard },
+  { name: 'Transações',          path: '/transactions', icon: ArrowLeftRight },
+  { name: 'Fechamento de Caixa', path: '/cash-close',  icon: Calculator }, // ← NOVO
+  { name: 'Relatórios',          path: '/reports',     icon: FileText },
+  { name: 'Metas Financeiras',   path: '/goals',       icon: Target },
+  { name: 'Educação Financeira', path: '/education',   icon: GraduationCap },
+  { name: 'CoreChat',            path: '/chat',        icon: MessageSquare },
 ];
 
 const adminNavItem: NavItem = { name: 'Administração', path: '/admin', icon: Shield };
@@ -39,7 +41,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
 
-  // Mostra a seção admin apenas pra admin e viewer
   const showAdminSection = user?.role === 'admin' || user?.role === 'viewer';
 
   return (
@@ -56,14 +57,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       <div
         className={cn(
           "flex flex-col h-full w-64 bg-sidebar border-r border-sidebar-border",
-          // Mobile: drawer fixo que desliza
           "fixed inset-y-0 left-0 z-40 transition-transform duration-300",
           isOpen ? "translate-x-0" : "-translate-x-full",
-          // Desktop: volta pro fluxo normal, sempre visível
           "lg:static lg:translate-x-0 lg:z-auto"
         )}
       >
-        {/* Brand - Text Logo */}
+        {/* Brand */}
         <Link
           to="/home"
           onClick={onClose}
@@ -83,7 +82,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+            const isActive =
+              location.pathname === item.path ||
+              location.pathname.startsWith(item.path + '/');
 
             return (
               <Link
@@ -104,7 +105,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* Admin Section - aparece só pra admin/viewer */}
+        {/* Admin Section */}
         {showAdminSection && (
           <div className="px-4 pb-4 border-t border-sidebar-border pt-4">
             <Link
@@ -112,7 +113,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               onClick={onClose}
               className={cn(
                 'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
-                (location.pathname === adminNavItem.path || location.pathname.startsWith(adminNavItem.path + '/'))
+                (location.pathname === adminNavItem.path ||
+                  location.pathname.startsWith(adminNavItem.path + '/'))
                   ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                   : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
               )}

@@ -4,29 +4,71 @@ import coreFinLogo from 'figma:asset/1b6285e9fbc6384159f09ff618cf0c6f8f538e31.pn
 import { auth } from '../services/auth';
 import { ApiError } from '../services/api';
 
+// ── Regras de senha forte ─────────────────────────────────────────────────────
+// Espelho do backend (users/serializers.py → validate_strong_password)
+const PASSWORD_RULES = [
+  { label: 'Mínimo 8 caracteres',              test: (v: string) => v.length >= 8 },
+  { label: 'Pelo menos uma letra maiúscula',   test: (v: string) => /[A-Z]/.test(v) },
+  { label: 'Pelo menos um número',             test: (v: string) => /[0-9]/.test(v) },
+  { label: 'Pelo menos um caractere especial', test: (v: string) => /[^A-Za-z0-9]/.test(v) },
+];
+
+function isStrongPassword(v: string) {
+  return PASSWORD_RULES.every((r) => r.test(v));
+}
+
+// Checklist visual adaptada ao fundo branco translúcido do Signup
+function PasswordChecklist({ password }: { password: string }) {
+  if (!password) return null;
+  return (
+    <ul className="mt-2 space-y-1">
+      {PASSWORD_RULES.map((r) => {
+        const ok = r.test(password);
+        return (
+          <li key={r.label} className={`text-xs flex items-center gap-1.5 ${
+            ok ? 'text-green-300' : 'text-white/60'
+          }`}>
+            <span>{ok ? '✓' : '○'}</span>
+            {r.label}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ── Componente principal ──────────────────────────────────────────────────────
+
 export function Signup() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    fullName: '',
-    businessName: '',
-    email: '',
-    password: '',
+    fullName:        '',
+    businessName:    '',
+    email:           '',
+    password:        '',
     confirmPassword: '',
   });
-  const [loading, setLoading] = useState(false);
+  const [loading,  setLoading]  = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const passwordsMatch = formData.confirmPassword === ''
+    || formData.password === formData.confirmPassword;
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
-    // Validação no front: senhas têm que bater
     if (formData.password !== formData.confirmPassword) {
       setErrorMsg('As senhas não coincidem.');
+      return;
+    }
+
+    if (!isStrongPassword(formData.password)) {
+      setErrorMsg('A senha não atende todos os requisitos de segurança listados abaixo.');
       return;
     }
 
@@ -34,37 +76,38 @@ export function Signup() {
 
     try {
       await auth.register({
-        name: formData.fullName,
+        name:          formData.fullName,
         business_name: formData.businessName,
-        email: formData.email,
-        password: formData.password,
+        email:         formData.email,
+        password:      formData.password,
       });
 
-      // Sucesso: redireciona pro login com mensagem
       navigate('/login', {
         state: { message: 'Conta criada com sucesso! Faça login para continuar.' },
       });
     } catch (err) {
       if (err instanceof ApiError) {
-        // O backend retorna erros por campo, ex:
-        // { email: ["user with this email already exists."] }
-        // ou { password: ["Ensure this field has at least 8 characters."] }
         const data = err.data || {};
+
+        // O backend pode devolver password como array de strings
+        const passwordErrors: string[] = data.password || [];
+        if (passwordErrors.length > 0) {
+          setErrorMsg(passwordErrors.join(' '));
+          setLoading(false);
+          return;
+        }
+
         const firstError =
           data.email?.[0] ||
-          data.password?.[0] ||
           data.name?.[0] ||
           data.business_name?.[0] ||
           data.detail ||
           err.message ||
           'Erro ao criar conta. Verifique os dados e tente novamente.';
 
-        // Traduz erros comuns
         let userFriendly = firstError;
         if (firstError.includes('already exists')) {
           userFriendly = 'Este e-mail já está cadastrado.';
-        } else if (firstError.includes('at least 8 characters')) {
-          userFriendly = 'A senha precisa ter no mínimo 8 caracteres.';
         } else if (firstError.includes('valid email')) {
           userFriendly = 'E-mail inválido.';
         }
@@ -86,11 +129,7 @@ export function Signup() {
 
         <div className="w-full max-w-md relative z-10">
           <div className="text-center mb-8 lg:hidden">
-            <img
-              src={coreFinLogo}
-              alt="CoreFin"
-              className="h-20 w-auto mx-auto mb-4 drop-shadow-2xl"
-            />
+            <img src={coreFinLogo} alt="CoreFin" className="h-20 w-auto mx-auto mb-4 drop-shadow-2xl" />
           </div>
 
           <div className="bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 p-8">
@@ -100,70 +139,71 @@ export function Signup() {
             </div>
 
             <form onSubmit={handleSignup} className="space-y-5">
+              {/* Nome completo */}
               <div>
                 <label className="block text-sm text-white/90 mb-2">Nome completo</label>
                 <input
-                  type="text"
-                  placeholder="João da Silva"
+                  type="text" placeholder="João da Silva" required
                   value={formData.fullName}
                   onChange={(e) => handleChange('fullName', e.target.value)}
                   className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all"
-                  required
                   disabled={loading}
                 />
               </div>
 
+              {/* Nome do negócio */}
               <div>
                 <label className="block text-sm text-white/90 mb-2">Nome do negócio</label>
                 <input
-                  type="text"
-                  placeholder="Silva Comércio"
+                  type="text" placeholder="Silva Comércio" required
                   value={formData.businessName}
                   onChange={(e) => handleChange('businessName', e.target.value)}
                   className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all"
-                  required
                   disabled={loading}
                 />
               </div>
 
+              {/* E-mail */}
               <div>
                 <label className="block text-sm text-white/90 mb-2">E-mail</label>
                 <input
-                  type="email"
-                  placeholder="seu@email.com"
+                  type="email" placeholder="seu@email.com" required
                   value={formData.email}
                   onChange={(e) => handleChange('email', e.target.value)}
                   className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all"
-                  required
                   disabled={loading}
                 />
               </div>
 
+              {/* Senha — com checklist de força */}
               <div>
                 <label className="block text-sm text-white/90 mb-2">Senha</label>
                 <input
-                  type="password"
-                  placeholder="••••••••"
+                  type="password" placeholder="••••••••" required
                   value={formData.password}
                   onChange={(e) => handleChange('password', e.target.value)}
                   className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all"
-                  required
-                  minLength={8}
                   disabled={loading}
                 />
+                {/* Checklist aparece assim que o usuário começa a digitar */}
+                <PasswordChecklist password={formData.password} />
               </div>
 
+              {/* Confirmar senha */}
               <div>
                 <label className="block text-sm text-white/90 mb-2">Confirmar senha</label>
                 <input
-                  type="password"
-                  placeholder="••••••••"
+                  type="password" placeholder="••••••••" required
                   value={formData.confirmPassword}
                   onChange={(e) => handleChange('confirmPassword', e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all"
-                  required
+                  className={`w-full px-4 py-3 rounded-lg bg-white/20 border text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all ${
+                    !passwordsMatch ? 'border-red-400/70' : 'border-white/30'
+                  }`}
                   disabled={loading}
                 />
+                {!passwordsMatch && (
+                  <p className="text-xs text-red-300 mt-1">As senhas não coincidem.</p>
+                )}
               </div>
 
               {errorMsg && (
@@ -174,7 +214,7 @@ export function Signup() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !isStrongPassword(formData.password) || !passwordsMatch}
                 className="w-full bg-white text-primary py-3 rounded-lg hover:bg-white/90 transition-all shadow-lg text-lg disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? 'Criando conta...' : 'Criar conta'}
@@ -201,11 +241,7 @@ export function Signup() {
       <div className="hidden lg:flex lg:flex-1 bg-background p-12 items-center justify-center relative">
         <div className="relative z-10 max-w-lg">
           <div className="mb-12">
-            <img
-              src={coreFinLogo}
-              alt="CoreFin"
-              className="h-48 w-auto drop-shadow-2xl mx-auto"
-            />
+            <img src={coreFinLogo} alt="CoreFin" className="h-48 w-auto drop-shadow-2xl mx-auto" />
           </div>
           <h1 className="text-5xl mb-6 text-center text-foreground">
             Comece sua jornada financeira
@@ -215,30 +251,16 @@ export function Signup() {
             sua gestão financeira com o CoreFin.
           </p>
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
+            {['Gratuito para começar', 'Configuração em minutos', 'Suporte dedicado'].map((item) => (
+              <div key={item} className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span>{item}</span>
               </div>
-              <span>Gratuito para começar</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <span>Configuração em minutos</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <span>Suporte dedicado</span>
-            </div>
+            ))}
           </div>
         </div>
       </div>

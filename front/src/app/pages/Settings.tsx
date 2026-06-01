@@ -22,6 +22,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { CategoryManager } from '../components/CategoryManager';
+import { PASSWORD_RULES } from '../components/PasswordStrengthInput';
 import { auth } from '../services/auth';
 import { ApiError } from '../services/api';
 import {
@@ -187,10 +188,11 @@ export function Settings() {
       return;
     }
 
-    if (passwordForm.new_password.length < 8) {
+    const failedRules = PASSWORD_RULES.filter((r) => !r.test(passwordForm.new_password));
+    if (failedRules.length > 0) {
       setPasswordFeedback({
         kind: 'error',
-        message: 'A nova senha precisa ter pelo menos 8 caracteres.',
+        message: failedRules.map((r) => r.label).join(' · '),
       });
       return;
     }
@@ -559,6 +561,27 @@ export function Settings() {
                           }
                           className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         />
+                        {/* Checklist de força — aparece ao digitar */}
+                        {passwordForm.new_password && (
+                          <ul className="mt-2 space-y-1">
+                            {PASSWORD_RULES.map((r) => {
+                              const ok = r.test(passwordForm.new_password);
+                              return (
+                                <li
+                                  key={r.label}
+                                  className={`text-xs flex items-center gap-1.5 ${
+                                    ok
+                                      ? 'text-green-600 dark:text-green-400'
+                                      : 'text-muted-foreground'
+                                  }`}
+                                >
+                                  <span>{ok ? '✓' : '○'}</span>
+                                  {r.label}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
                       </div>
                       <div>
                         <label
@@ -578,8 +601,19 @@ export function Settings() {
                               confirm_password: e.target.value,
                             })
                           }
-                          className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                          className={`w-full px-4 py-2.5 bg-accent border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary ${
+                            passwordForm.confirm_password &&
+                            passwordForm.confirm_password !== passwordForm.new_password
+                              ? 'border-destructive'
+                              : 'border-border'
+                          }`}
                         />
+                        {passwordForm.confirm_password &&
+                          passwordForm.confirm_password !== passwordForm.new_password && (
+                            <p className="text-xs text-destructive mt-1">
+                              As senhas não coincidem.
+                            </p>
+                          )}
                       </div>
 
                       {passwordFeedback && (

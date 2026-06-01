@@ -2,6 +2,9 @@
 apps/finance/models.py
 Módulo financeiro: Category, Income, Expense.
 Todos os registros são isolados por usuário (multi-tenant por linha).
+
+CHANGELOG:
+  - Adicionado campo `payment_method` em TransactionBase (PIX, Dinheiro, Crédito, Débito).
 """
 from django.db import models
 from django.conf import settings
@@ -13,9 +16,6 @@ class Category(BaseModel):
     """
     Categoria de receitas/despesas.
     Cada usuário tem suas próprias categorias.
-    Exemplos: Salário, Alimentação, Transporte, Lazer…
-    Uma categoria com o mesmo nome pode existir pra tipo diferente
-    (ex: "Aluguel" como receita E "Aluguel" como despesa).
     """
 
     class CategoryType(models.TextChoices):
@@ -34,16 +34,13 @@ class Category(BaseModel):
         choices=CategoryType.choices,
         default=CategoryType.EXPENSE,
     )
-
-    # Preparado para IA: ícone/cor sugerido pelo modelo
     icon = models.CharField(max_length=50, blank=True)
-    color = models.CharField(max_length=7, blank=True)  # hex: #RRGGBB
+    color = models.CharField(max_length=7, blank=True)
 
     class Meta:
         verbose_name = "Categoria"
         verbose_name_plural = "Categorias"
-        # Unique por (user + name + type): permite "Aluguel" receita E "Aluguel" despesa
-        unique_together = ("user", "name", "type")
+        unique_together = (("user", "name", "type"),)
         ordering = ["name"]
 
     def __str__(self):
@@ -53,8 +50,14 @@ class Category(BaseModel):
 class TransactionBase(BaseModel):
     """
     Model abstrato compartilhado entre Income e Expense.
-    Evita repetição de campos comuns.
     """
+
+    class PaymentMethod(models.TextChoices):
+        DINHEIRO = "dinheiro", "Dinheiro"
+        PIX      = "pix",      "PIX"
+        CREDITO  = "credito",  "Crédito"
+        DEBITO   = "debito",   "Débito"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -69,7 +72,16 @@ class TransactionBase(BaseModel):
     date = models.DateField()
     description = models.CharField(max_length=255, blank=True)
 
-    # Campo extra pensando em features de IA (ex: classificação automática)
+    # Novo campo — forma de pagamento
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PaymentMethod.choices,
+        default=PaymentMethod.DINHEIRO,
+        blank=True,
+        verbose_name="Forma de pagamento",
+    )
+
+    # Campo extra pensando em features de IA
     ai_tags = models.JSONField(default=list, blank=True)
 
     class Meta:
@@ -91,7 +103,7 @@ class Income(TransactionBase):
 
 class Expense(TransactionBase):
     """Despesa do usuário."""
-    is_recurring = models.BooleanField(default=False)  # útil para alertas de IA
+    is_recurring = models.BooleanField(default=False)
 
     class Meta(TransactionBase.Meta):
         verbose_name = "Despesa"

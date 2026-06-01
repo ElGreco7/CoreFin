@@ -1,8 +1,14 @@
+// src/app/pages/NewTransaction.tsx
+//
+// CHANGELOG:
+//  - Adicionado campo `payment_method` (Dinheiro, PIX, Crédito, Débito).
+//  - Campo incluso no payload de createIncome / createExpense.
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ArrowLeft, Save, X, Plus } from 'lucide-react';
 import { Button } from '../components/Button';
-import { finance, Category } from '../services/finance';
+import { finance, Category, PAYMENT_METHOD_OPTIONS, PaymentMethod } from '../services/finance';
 import { ApiError } from '../services/api';
 
 type TransactionType = 'income' | 'expense';
@@ -11,31 +17,28 @@ export function NewTransaction() {
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
-    type: 'income' as TransactionType,
-    description: '',
-    amount: '',
-    category: '' as string, // id da categoria como string (vazio = sem categoria)
-    date: new Date().toISOString().split('T')[0],
-    notes: '',
+    type:           'income' as TransactionType,
+    description:    '',
+    amount:         '',
+    category:       '' as string,
+    date:           new Date().toISOString().split('T')[0],
+    payment_method: 'dinheiro' as PaymentMethod,
+    notes:          '',
   });
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-
-  // Modal de criar categoria nova
+  const [categories, setCategories]       = useState<Category[]>([]);
+  const [saving, setSaving]               = useState(false);
+  const [errorMsg, setErrorMsg]           = useState('');
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [creatingCategory, setCreatingCategory] = useState(false);
 
-  // Carrega categorias do backend
   useEffect(() => {
     finance.listCategories()
       .then((data) => setCategories(data.results))
       .catch(() => setCategories([]));
   }, []);
 
-  // Filtra categorias pelo tipo selecionado
   const filteredCategories = categories.filter((c) => c.type === formData.type);
 
   function handleTypeChange(type: TransactionType) {
@@ -45,19 +48,14 @@ export function NewTransaction() {
 
   async function handleCreateCategory() {
     if (!newCategoryName.trim()) return;
-
     setCreatingCategory(true);
     try {
-      const created = await finance.createCategory({
-        name: newCategoryName.trim(),
-        type: formData.type,
-      });
-      // Adiciona à lista local e seleciona automaticamente
+      const created = await finance.createCategory({ name: newCategoryName.trim(), type: formData.type });
       setCategories((prev) => [...prev, created]);
       setFormData((prev) => ({ ...prev, category: String(created.id) }));
       setNewCategoryName('');
       setShowNewCategory(false);
-    } catch (err) {
+    } catch {
       alert('Erro ao criar categoria. Tente novamente.');
     } finally {
       setCreatingCategory(false);
@@ -68,7 +66,6 @@ export function NewTransaction() {
     e.preventDefault();
     setErrorMsg('');
 
-    // Validação rápida
     const amount = parseFloat(formData.amount);
     if (isNaN(amount) || amount <= 0) {
       setErrorMsg('Informe um valor maior que zero.');
@@ -77,16 +74,16 @@ export function NewTransaction() {
 
     setSaving(true);
 
-    // Monta a descrição: se tem observações, concatena
     const fullDescription = formData.notes
       ? `${formData.description} — ${formData.notes}`
       : formData.description;
 
     const payload = {
-      amount: formData.amount,
-      date: formData.date,
-      description: fullDescription,
-      category: formData.category ? parseInt(formData.category) : null,
+      amount:         formData.amount,
+      date:           formData.date,
+      description:    fullDescription,
+      category:       formData.category ? parseInt(formData.category) : null,
+      payment_method: formData.payment_method,
     };
 
     try {
@@ -95,16 +92,13 @@ export function NewTransaction() {
       } else {
         await finance.createExpense(payload);
       }
-      // Sucesso: volta pra lista
       navigate('/transactions');
     } catch (err) {
       if (err instanceof ApiError) {
         const data = err.data || {};
         const firstError =
-          data.amount?.[0] ||
-          data.date?.[0] ||
-          data.description?.[0] ||
-          data.detail ||
+          data.amount?.[0] || data.date?.[0] || data.description?.[0] ||
+          data.payment_method?.[0] || data.detail ||
           'Erro ao salvar a transação. Verifique os dados.';
         setErrorMsg(firstError);
       } else {
@@ -115,16 +109,11 @@ export function NewTransaction() {
     }
   }
 
-  function handleCancel() {
-    navigate('/transactions');
-  }
-
   return (
     <div className="p-8 max-w-3xl mx-auto">
-      {/* Header */}
       <div className="mb-8">
         <button
-          onClick={handleCancel}
+          onClick={() => navigate('/transactions')}
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -134,52 +123,38 @@ export function NewTransaction() {
         <p className="text-muted-foreground">Registre uma nova receita ou despesa</p>
       </div>
 
-      {/* Form */}
       <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-border p-8">
-        {/* Transaction Type */}
+        {/* Tipo */}
         <div className="mb-6">
           <label className="block text-foreground mb-3">Tipo de Transação</label>
           <div className="grid grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => handleTypeChange('income')}
-              className={`p-4 rounded-lg border-2 transition-all ${
-                formData.type === 'income'
-                  ? 'border-secondary bg-secondary/10 text-secondary'
-                  : 'border-border bg-accent text-muted-foreground hover:border-secondary/50'
-              }`}
-            >
-              <div className="text-center">
-                <div className="text-2xl mb-1">↑</div>
-                <div>Receita</div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTypeChange('expense')}
-              className={`p-4 rounded-lg border-2 transition-all ${
-                formData.type === 'expense'
-                  ? 'border-destructive bg-destructive/10 text-destructive'
-                  : 'border-border bg-accent text-muted-foreground hover:border-destructive/50'
-              }`}
-            >
-              <div className="text-center">
-                <div className="text-2xl mb-1">↓</div>
-                <div>Despesa</div>
-              </div>
-            </button>
+            {(['income', 'expense'] as TransactionType[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => handleTypeChange(t)}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  formData.type === t
+                    ? t === 'income'
+                      ? 'border-secondary bg-secondary/10 text-secondary'
+                      : 'border-destructive bg-destructive/10 text-destructive'
+                    : 'border-border bg-accent text-muted-foreground hover:border-muted-foreground/40'
+                }`}
+              >
+                <div className="text-center">
+                  <div className="text-2xl mb-1">{t === 'income' ? '↑' : '↓'}</div>
+                  <div>{t === 'income' ? 'Receita' : 'Despesa'}</div>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Description */}
+        {/* Descrição */}
         <div className="mb-6">
-          <label htmlFor="description" className="block text-foreground mb-2">
-            Descrição *
-          </label>
+          <label htmlFor="description" className="block text-foreground mb-2">Descrição *</label>
           <input
-            id="description"
-            type="text"
-            required
+            id="description" type="text" required
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             placeholder="Ex: Venda de produto, Pagamento de fornecedor..."
@@ -188,18 +163,12 @@ export function NewTransaction() {
           />
         </div>
 
-        {/* Amount and Date */}
+        {/* Valor e Data */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
-            <label htmlFor="amount" className="block text-foreground mb-2">
-              Valor (R$) *
-            </label>
+            <label htmlFor="amount" className="block text-foreground mb-2">Valor (R$) *</label>
             <input
-              id="amount"
-              type="number"
-              required
-              step="0.01"
-              min="0.01"
+              id="amount" type="number" required step="0.01" min="0.01"
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
               placeholder="0,00"
@@ -207,15 +176,10 @@ export function NewTransaction() {
               disabled={saving}
             />
           </div>
-
           <div>
-            <label htmlFor="date" className="block text-foreground mb-2">
-              Data *
-            </label>
+            <label htmlFor="date" className="block text-foreground mb-2">Data *</label>
             <input
-              id="date"
-              type="date"
-              required
+              id="date" type="date" required
               value={formData.date}
               onChange={(e) => setFormData({ ...formData, date: e.target.value })}
               className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
@@ -224,12 +188,32 @@ export function NewTransaction() {
           </div>
         </div>
 
-        {/* Category */}
+        {/* Forma de pagamento */}
+        <div className="mb-6">
+          <label className="block text-foreground mb-3">Forma de Pagamento *</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {PAYMENT_METHOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setFormData({ ...formData, payment_method: opt.value })}
+                disabled={saving}
+                className={`py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                  formData.payment_method === opt.value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-accent text-muted-foreground hover:border-muted-foreground/40'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Categoria */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <label htmlFor="category" className="block text-foreground">
-              Categoria
-            </label>
+            <label htmlFor="category" className="block text-foreground">Categoria</label>
             <button
               type="button"
               onClick={() => setShowNewCategory(!showNewCategory)}
@@ -240,7 +224,6 @@ export function NewTransaction() {
               Nova categoria
             </button>
           </div>
-
           {!showNewCategory ? (
             <select
               id="category"
@@ -251,9 +234,7 @@ export function NewTransaction() {
             >
               <option value="">Sem categoria</option>
               {filteredCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>
           ) : (
@@ -266,73 +247,44 @@ export function NewTransaction() {
                 className="flex-1 px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={creatingCategory}
               />
-              <Button
-                type="button"
-                variant="primary"
-                onClick={handleCreateCategory}
-                disabled={creatingCategory || !newCategoryName.trim()}
-              >
+              <Button type="button" variant="primary" onClick={handleCreateCategory}
+                disabled={creatingCategory || !newCategoryName.trim()}>
                 {creatingCategory ? '...' : 'Criar'}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setShowNewCategory(false);
-                  setNewCategoryName('');
-                }}
-                disabled={creatingCategory}
-              >
-                Cancelar
+              <Button type="button" variant="outline"
+                onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}
+                disabled={creatingCategory}>
+                <X className="w-4 h-4" />
               </Button>
             </div>
           )}
         </div>
 
-        {/* Notes */}
+        {/* Observações */}
         <div className="mb-8">
-          <label htmlFor="notes" className="block text-foreground mb-2">
-            Observações
-          </label>
+          <label htmlFor="notes" className="block text-foreground mb-2">Observações</label>
           <textarea
-            id="notes"
-            rows={4}
+            id="notes" rows={3}
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            placeholder="Adicione detalhes ou observações sobre esta transação..."
+            placeholder="Detalhes adicionais sobre esta transação..."
             className="w-full px-4 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
             disabled={saving}
           />
-          <p className="text-xs text-muted-foreground mt-1">
-            As observações serão adicionadas à descrição.
-          </p>
         </div>
 
-        {/* Mensagem de erro */}
         {errorMsg && (
           <div className="mb-6 bg-destructive/10 border border-destructive/40 text-destructive px-4 py-3 rounded-lg text-sm">
             {errorMsg}
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex gap-4 justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleCancel}
-            className="gap-2"
-            disabled={saving}
-          >
-            <X className="w-5 h-5" />
-            Cancelar
+          <Button type="button" variant="outline" onClick={() => navigate('/transactions')}
+            className="gap-2" disabled={saving}>
+            <X className="w-5 h-5" /> Cancelar
           </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            className="gap-2"
-            disabled={saving}
-          >
+          <Button type="submit" variant="primary" className="gap-2" disabled={saving}>
             <Save className="w-5 h-5" />
             {saving ? 'Salvando...' : 'Salvar Transação'}
           </Button>

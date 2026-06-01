@@ -1,11 +1,30 @@
 /**
  * src/app/services/finance.ts
  *
- * Funções de finanças do CoreFin (categorias, receitas, despesas, resumo).
+ * CHANGELOG:
+ *  - Income e Expense agora têm campo `payment_method` e `payment_method_display`.
+ *  - Novo tipo `CashClose` e função `getCashClose()`.
  */
 import { api } from "./api";
 
-// ── Tipos ───────────────────────────────────────────────────────────────────
+// ── Tipos ────────────────────────────────────────────────────────────────────
+
+export type PaymentMethod = 'dinheiro' | 'pix' | 'credito' | 'debito';
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  dinheiro: 'Dinheiro',
+  pix:      'PIX',
+  credito:  'Crédito',
+  debito:   'Débito',
+};
+
+export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: 'dinheiro', label: 'Dinheiro' },
+  { value: 'pix',      label: 'PIX' },
+  { value: 'credito',  label: 'Crédito' },
+  { value: 'debito',   label: 'Débito' },
+];
+
 export interface Category {
   id: number;
   name: string;
@@ -17,12 +36,14 @@ export interface Category {
 
 export interface Income {
   id: number;
-  amount: string;          // vem como string do Django (Decimal)
-  date: string;            // ISO: "2026-05-14"
+  amount: string;
+  date: string;
   description: string;
   category: number | null;
   category_name?: string;
-  is_recurring: boolean;
+  payment_method: PaymentMethod;
+  payment_method_display?: string;
+  ai_tags: string[];
   created_at: string;
 }
 
@@ -33,7 +54,10 @@ export interface Expense {
   description: string;
   category: number | null;
   category_name?: string;
+  payment_method: PaymentMethod;
+  payment_method_display?: string;
   is_recurring: boolean;
+  ai_tags: string[];
   created_at: string;
 }
 
@@ -45,6 +69,23 @@ export interface Summary {
   period_end: string;
 }
 
+export interface PaymentMethodBreakdown {
+  payment_method: PaymentMethod;
+  payment_method_display: string;
+  total: string;
+  count: number;
+}
+
+export interface CashClose {
+  period_start: string;
+  period_end: string;
+  total_income: string;
+  total_expense: string;
+  balance: string;
+  income_by_payment: PaymentMethodBreakdown[];
+  expense_by_payment: PaymentMethodBreakdown[];
+}
+
 interface PaginatedResponse<T> {
   count: number;
   next: string | null;
@@ -52,17 +93,18 @@ interface PaginatedResponse<T> {
   results: T[];
 }
 
-// ── Funções ─────────────────────────────────────────────────────────────────
+// ── Funções ──────────────────────────────────────────────────────────────────
 
-/**
- * Resumo do mês atual (ou mês específico via param 'month' formato YYYY-MM).
- */
 async function getSummary(month?: string): Promise<Summary> {
   const query = month ? `?month=${month}` : '';
   return api.get<Summary>(`/finance/summary/${query}`);
 }
 
-// Receitas
+async function getCashClose(params?: { start_date?: string; end_date?: string }): Promise<CashClose> {
+  const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+  return api.get<CashClose>(`/finance/cash-close/${query}`);
+}
+
 async function listIncomes(params?: Record<string, string | number>): Promise<PaginatedResponse<Income>> {
   const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
   return api.get<PaginatedResponse<Income>>(`/finance/incomes/${query}`);
@@ -80,7 +122,6 @@ async function deleteIncome(id: number): Promise<void> {
   return api.delete(`/finance/incomes/${id}/`);
 }
 
-// Despesas
 async function listExpenses(params?: Record<string, string | number>): Promise<PaginatedResponse<Expense>> {
   const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
   return api.get<PaginatedResponse<Expense>>(`/finance/expenses/${query}`);
@@ -98,7 +139,6 @@ async function deleteExpense(id: number): Promise<void> {
   return api.delete(`/finance/expenses/${id}/`);
 }
 
-// Categorias
 async function listCategories(): Promise<PaginatedResponse<Category>> {
   return api.get<PaginatedResponse<Category>>('/finance/categories/');
 }
@@ -115,22 +155,10 @@ async function deleteCategory(id: number): Promise<void> {
   return api.delete(`/finance/categories/${id}/`);
 }
 
-// ── Export único ────────────────────────────────────────────────────────────
 export const finance = {
   getSummary,
-  // incomes
-  listIncomes,
-  createIncome,
-  updateIncome,
-  deleteIncome,
-  // expenses
-  listExpenses,
-  createExpense,
-  updateExpense,
-  deleteExpense,
-  // categories
-  listCategories,
-  createCategory,
-  updateCategory,
-  deleteCategory,
+  getCashClose,
+  listIncomes, createIncome, updateIncome, deleteIncome,
+  listExpenses, createExpense, updateExpense, deleteExpense,
+  listCategories, createCategory, updateCategory, deleteCategory,
 };

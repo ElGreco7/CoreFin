@@ -120,9 +120,9 @@ export function Login() {
                   />
                   Lembrar-me
                 </label>
-                <a href="#" className="text-white hover:underline">
+                <Link to="/recuperar-senha" className="text-white hover:underline">
                   Esqueceu a senha?
-                </a>
+                </Link>
               </div>
 
               <button

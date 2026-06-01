@@ -2,7 +2,50 @@
 
 > Plataforma de Gestão Financeira para Microempreendedores Individuais (MEI)
 
-**Trabalho de Conclusão de Curso · 2026**
+🎥 Vídeo de Apresentação do Projeto <br>
+📌 Assista ao vídeo oficial de apresentação do CoreFin: https://youtu.be/Z9l3yQmTRMY 
+
+**Trabalho de Conclusão de Curso · 2026 da Turma de Sistemas de Informação - FAMETRO** <br>
+**Professor(a) Orientador(a)**: Mba. Luana Leal | GitHub: ProfaLuanaLeal <br>
+**Integrates:** <br>
+· Carlos Victor | GitHub: cvictor7 <br>
+· Francisco Emanuel: | GitHub: ElGreco7 <br>
+· Lucas Ribeiro: | GitHub: LucasR29-boop <br>
+· Elly Lima: | GitHub: EllyLima <br>
+
+---
+
+## 🔗 Capturas de Tela
+
+### 🔗 Criar Conta
+
+<p align="center">
+  <img src="./assets/criar_conta.png" alt="Criar Conta" width="700">
+</p>
+
+### 🔗 Login
+
+<p align="center">
+  <img src="./assets/login.png" alt="Login" width="700">
+</p>
+
+### 🔗 Tela Principal e Menu de Navegação
+
+<p align="center">
+  <img src="./assets/home.png" alt="Home" width="700">
+</p>
+
+### 🔗 ChatBot (CoreChat)
+
+<p align="center">
+  <img src="./assets/corechat.png" alt="ChatBot" width="700">
+</p>
+
+### 🔗 Nova Transação
+
+<p align="center">
+  <img src="./assets/transacoes_receita.png" alt="Nova Transação (Receita)" width="700">
+</p>
 
 ---
 
@@ -225,9 +268,23 @@ carlos (local)    ─┘
 
 ---
 
-## Equipe
+##  Agradecimentos
 
-Desenvolvido como Trabalho de Conclusão de Curso — 2026.
+Agradecimento especial para à nossa professora orientadora de TCC Mba. Luana Leal.
+
+---
+
+## Autores
+
+Francisco Emanuel <br>
+· GitHub: ElGreco7 <br>
+· LinkedIn: https://www.linkedin.com/in/fraemanuel <br>
+· Email: franciscoemanuelfe2003@gmail.com <br>
+
+Carlos Victor <br>
+· GitHub: cvictor7 <br>
+· LinkedIn: https://www.linkedin.com/in/carlos-victor-a86976319 <br>
+· Email: carlosvictor1827@gmail.com <br>
 
 ---
 

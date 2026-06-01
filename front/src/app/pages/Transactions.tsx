@@ -11,7 +11,18 @@ import {
   ChevronDown,
   Edit2,
   Trash2,
+  BarChart2,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell,
+  ResponsiveContainer,
+} from 'recharts';
 import { Button } from '../components/Button';
 import {
   AlertDialog,
@@ -37,10 +48,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { finance, Income, Expense, Category } from '../services/finance';
+import { finance, Income, Expense, Category, CashClose as CashCloseData } from '../services/finance';
 import { tokens } from '../services/api';
 
-// Modelo unificado pra mostrar receitas + despesas na mesma tabela
 type TransactionType = 'income' | 'expense';
 
 interface UnifiedTransaction {
@@ -53,7 +63,6 @@ interface UnifiedTransaction {
   category_name: string;
 }
 
-// URL base do backend (mesma do api.ts)
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 function formatDate(iso: string): string {
@@ -66,17 +75,26 @@ function formatCurrency(value: string | number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const PAYMENT_COLORS: Record<string, string> = {
+  pix:      '#1D9E75',
+  dinheiro: '#378ADD',
+  credito:  '#BA7517',
+  debito:   '#7F77DD',
+};
+
+const getPaymentColor = (method: string, idx: number): string =>
+  PAYMENT_COLORS[method] || ['#1e5a8e', '#6fbd6b', '#f59e0b', '#94a3b8'][idx % 4];
+
 export function Transactions() {
   const [transactions, setTransactions] = useState<UnifiedTransaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [paymentData, setPaymentData] = useState<CashCloseData | null>(null);
 
-  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
 
-  // Modais
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<UnifiedTransaction | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -85,7 +103,6 @@ export function Transactions() {
   const [editingTransaction, setEditingTransaction] = useState<UnifiedTransaction | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Carrega dados do backend
   async function loadData() {
     setLoading(true);
     try {
@@ -121,27 +138,25 @@ export function Transactions() {
       setTransactions(all);
 
       if (categoriesData?.results) setCategories(categoriesData.results);
+
+      const cashData = await finance.getCashClose().catch(() => null);
+      if (cashData) setPaymentData(cashData);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  // Aplica filtros no front (já temos tudo carregado)
   const filteredTransactions = transactions.filter((t) => {
     const matchesSearch =
       t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.category_name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === 'all' || t._type === filterType;
-    const matchesCategory =
-      filterCategory === 'all' || String(t.category) === filterCategory;
+    const matchesCategory = filterCategory === 'all' || String(t.category) === filterCategory;
     return matchesSearch && matchesType && matchesCategory;
   });
 
-  // Totais
   const totalIncome = filteredTransactions
     .filter((t) => t._type === 'income')
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
@@ -152,8 +167,6 @@ export function Transactions() {
 
   const balance = totalIncome - totalExpense;
 
-  // ── Ações ──────────────────────────────────────────────────────────────
-
   function handleDeleteClick(transaction: UnifiedTransaction) {
     setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
@@ -161,7 +174,6 @@ export function Transactions() {
 
   async function handleDeleteConfirm() {
     if (!transactionToDelete) return;
-
     setDeleting(true);
     try {
       if (transactionToDelete._type === 'income') {
@@ -169,13 +181,12 @@ export function Transactions() {
       } else {
         await finance.deleteExpense(transactionToDelete.id);
       }
-      // Remove da lista local sem precisar recarregar tudo
       setTransactions((prev) =>
         prev.filter((t) => !(t.id === transactionToDelete.id && t._type === transactionToDelete._type))
       );
       setDeleteDialogOpen(false);
       setTransactionToDelete(null);
-    } catch (err) {
+    } catch {
       alert('Erro ao excluir transação. Tente novamente.');
     } finally {
       setDeleting(false);
@@ -189,7 +200,6 @@ export function Transactions() {
 
   async function handleEditSave() {
     if (!editingTransaction) return;
-
     setSaving(true);
     try {
       const payload = {
@@ -198,14 +208,11 @@ export function Transactions() {
         date: editingTransaction.date,
         category: editingTransaction.category,
       };
-
       if (editingTransaction._type === 'income') {
         await finance.updateIncome(editingTransaction.id, payload);
       } else {
         await finance.updateExpense(editingTransaction.id, payload);
       }
-
-      // Atualiza na lista local
       setTransactions((prev) =>
         prev.map((t) =>
           t.id === editingTransaction.id && t._type === editingTransaction._type
@@ -215,36 +222,22 @@ export function Transactions() {
       );
       setEditDialogOpen(false);
       setEditingTransaction(null);
-    } catch (err) {
+    } catch {
       alert('Erro ao salvar alterações. Tente novamente.');
     } finally {
       setSaving(false);
     }
   }
 
-  // ── Exportação ─────────────────────────────────────────────────────────
   async function handleExport(format: 'csv' | 'pdf') {
-    // Calcula período: primeiro dia do mês até hoje
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const startDate = firstDay.toISOString().slice(0, 10);
     const endDate = today.toISOString().slice(0, 10);
-
     const url = `${API_URL}/finance/reports/transactions.${format}?start_date=${startDate}&end_date=${endDate}`;
-
     try {
-      // Faz fetch com token JWT
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${tokens.getAccess()}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Falha ao exportar');
-      }
-
-      // Cria um link de download a partir do blob
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${tokens.getAccess()}` } });
+      if (!response.ok) throw new Error('Falha ao exportar');
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -254,16 +247,13 @@ export function Transactions() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
-    } catch (err) {
+    } catch {
       alert('Erro ao exportar o relatório. Tente novamente.');
     }
   }
 
-  // Categorias filtradas pelo tipo selecionado (pra dropdown de filtro)
   const filterableCategories =
-    filterType === 'all'
-      ? categories
-      : categories.filter((c) => c.type === filterType);
+    filterType === 'all' ? categories : categories.filter((c) => c.type === filterType);
 
   return (
     <div className="p-8">
@@ -323,10 +313,76 @@ export function Transactions() {
         </div>
       </div>
 
+      {/* Dashboards de forma de pagamento */}
+      {paymentData && (paymentData.income_by_payment.length > 0 || paymentData.expense_by_payment.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {paymentData.income_by_payment.length > 0 && (
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center gap-2 mb-6">
+                <BarChart2 className="w-5 h-5 text-secondary" />
+                <h3 className="text-lg text-foreground">Receitas por forma de pagamento</h3>
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={paymentData.income_by_payment.map((item, idx) => ({
+                    name: item.payment_method_display,
+                    valor: parseFloat(item.total),
+                    method: item.payment_method,
+                    idx,
+                  }))}
+                  layout="vertical"
+                  margin={{ left: 16, right: 24 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={72} />
+                  <Tooltip formatter={(val) => formatCurrency(val as number)} />
+                  <Bar dataKey="valor" name="R$" radius={[0, 4, 4, 0]}>
+                    {paymentData.income_by_payment.map((item, idx) => (
+                      <Cell key={item.payment_method} fill={getPaymentColor(item.payment_method, idx)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {paymentData.expense_by_payment.length > 0 && (
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center gap-2 mb-6">
+                <BarChart2 className="w-5 h-5 text-destructive" />
+                <h3 className="text-lg text-foreground">Despesas por forma de pagamento</h3>
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={paymentData.expense_by_payment.map((item, idx) => ({
+                    name: item.payment_method_display,
+                    valor: parseFloat(item.total),
+                    method: item.payment_method,
+                    idx,
+                  }))}
+                  layout="vertical"
+                  margin={{ left: 16, right: 24 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={72} />
+                  <Tooltip formatter={(val) => formatCurrency(val as number)} />
+                  <Bar dataKey="valor" name="R$" radius={[0, 4, 4, 0]}>
+                    {paymentData.expense_by_payment.map((item, idx) => (
+                      <Cell key={item.payment_method} fill={getPaymentColor(item.payment_method, idx)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filters and Search */}
       <div className="bg-card rounded-xl border border-border p-6 mb-6">
         <div className="flex flex-col md:flex-row gap-4">
-          {/* Search */}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
@@ -338,14 +394,10 @@ export function Transactions() {
             />
           </div>
 
-          {/* Type Filter */}
           <div className="relative">
             <select
               value={filterType}
-              onChange={(e) => {
-                setFilterType(e.target.value as any);
-                setFilterCategory('all'); // reset categoria ao mudar tipo
-              }}
+              onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('all'); }}
               className="appearance-none pl-10 pr-10 py-2.5 bg-accent border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
             >
               <option value="all">Todos os tipos</option>
@@ -356,7 +408,6 @@ export function Transactions() {
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
           </div>
 
-          {/* Category Filter */}
           <div className="relative">
             <select
               value={filterCategory}
@@ -372,7 +423,6 @@ export function Transactions() {
             <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
           </div>
 
-          {/* Export Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="gap-2">
@@ -429,11 +479,9 @@ export function Transactions() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            transaction._type === 'income' ? 'bg-secondary/10' : 'bg-destructive/10'
-                          }`}
-                        >
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                          transaction._type === 'income' ? 'bg-secondary/10' : 'bg-destructive/10'
+                        }`}>
                           {transaction._type === 'income' ? (
                             <ArrowUpRight className="w-5 h-5 text-secondary" />
                           ) : (
@@ -443,30 +491,18 @@ export function Transactions() {
                         <span className="text-foreground">{transaction.description}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {transaction.category_name}
-                    </td>
-                    <td
-                      className={`px-6 py-4 text-right ${
-                        transaction._type === 'income' ? 'text-secondary' : 'text-destructive'
-                      }`}
-                    >
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{transaction.category_name}</td>
+                    <td className={`px-6 py-4 text-right ${
+                      transaction._type === 'income' ? 'text-secondary' : 'text-destructive'
+                    }`}>
                       {transaction._type === 'income' ? '+' : '-'} {formatCurrency(transaction.amount)}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleEditClick(transaction)}
-                          className="p-2 hover:bg-accent rounded-lg transition-colors"
-                          title="Editar"
-                        >
+                        <button onClick={() => handleEditClick(transaction)} className="p-2 hover:bg-accent rounded-lg transition-colors" title="Editar">
                           <Edit2 className="w-5 h-5 text-muted-foreground hover:text-foreground" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteClick(transaction)}
-                          className="p-2 hover:bg-accent rounded-lg transition-colors"
-                          title="Excluir"
-                        >
+                        <button onClick={() => handleDeleteClick(transaction)} className="p-2 hover:bg-accent rounded-lg transition-colors" title="Excluir">
                           <Trash2 className="w-5 h-5 text-muted-foreground hover:text-destructive" />
                         </button>
                       </div>
@@ -479,7 +515,7 @@ export function Transactions() {
         </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -490,25 +526,19 @@ export function Transactions() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={handleDeleteConfirm} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {deleting ? 'Excluindo...' : 'Excluir'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Edit Transaction Dialog */}
+      {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Editar Transação</DialogTitle>
-            <DialogDescription>
-              Faça as alterações necessárias na transação abaixo.
-            </DialogDescription>
+            <DialogDescription>Faça as alterações necessárias na transação abaixo.</DialogDescription>
           </DialogHeader>
           {editingTransaction && (
             <div className="grid gap-4 py-4">
@@ -517,10 +547,8 @@ export function Transactions() {
                 <input
                   id="description"
                   value={editingTransaction.description}
-                  onChange={(e) =>
-                    setEditingTransaction({ ...editingTransaction, description: e.target.value })
-                  }
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(e) => setEditingTransaction({ ...editingTransaction, description: e.target.value })}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
               <div className="grid gap-2">
@@ -528,47 +556,32 @@ export function Transactions() {
                 <select
                   id="category"
                   value={editingTransaction.category ?? ''}
-                  onChange={(e) =>
-                    setEditingTransaction({
-                      ...editingTransaction,
-                      category: e.target.value ? parseInt(e.target.value) : null,
-                    })
-                  }
+                  onChange={(e) => setEditingTransaction({ ...editingTransaction, category: e.target.value ? parseInt(e.target.value) : null })}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="">Sem categoria</option>
-                  {categories
-                    .filter((c) => c.type === editingTransaction._type)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
+                  {categories.filter((c) => c.type === editingTransaction._type).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <label htmlFor="amount" className="text-sm font-medium">Valor (R$)</label>
                   <input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    id="amount" type="number" step="0.01" min="0"
                     value={editingTransaction.amount}
-                    onChange={(e) =>
-                      setEditingTransaction({ ...editingTransaction, amount: e.target.value })
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, amount: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                 </div>
                 <div className="grid gap-2">
                   <label htmlFor="date" className="text-sm font-medium">Data</label>
                   <input
-                    id="date"
-                    type="date"
+                    id="date" type="date"
                     value={editingTransaction.date}
-                    onChange={(e) =>
-                      setEditingTransaction({ ...editingTransaction, date: e.target.value })
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, date: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                 </div>
               </div>
@@ -579,9 +592,7 @@ export function Transactions() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)} disabled={saving}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)} disabled={saving}>Cancelar</Button>
             <Button variant="primary" onClick={handleEditSave} disabled={saving}>
               {saving ? 'Salvando...' : 'Salvar Alterações'}
             </Button>

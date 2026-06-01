@@ -1,11 +1,16 @@
 """
 apps/finance/views.py
 ViewSets com isolamento de dados por usuário (queryset filtrado sempre).
+
+CHANGELOG:
+  - CashCloseView: novo endpoint GET /api/finance/cash-close/
+    Agrupa receitas e despesas por forma de pagamento no período informado.
 """
 from calendar import monthrange
 from datetime import date
+from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Sum, Count
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -16,12 +21,13 @@ from drf_spectacular.types import OpenApiTypes
 
 from apps.users.models import User
 
-from .models import Category, Income, Expense
+from .models import Category, Income, Expense, TransactionBase
 from .serializers import (
     CategorySerializer,
     IncomeSerializer,
     ExpenseSerializer,
     SummarySerializer,
+    CashCloseSerializer,
 )
 from .filters import IncomeFilter, ExpenseFilter
 from .reports.generators import (
@@ -34,10 +40,6 @@ from .reports.generators import (
 
 # ── Renderer "coringa" pra endpoints que retornam arquivo (CSV/PDF) ─────────
 class PassthroughRenderer(BaseRenderer):
-    """
-    Renderer que aceita qualquer formato (*/*).
-    Não transforma nada — a view já monta a HttpResponse na mão.
-    """
     media_type = "*/*"
     format = "file"
 
@@ -46,10 +48,7 @@ class PassthroughRenderer(BaseRenderer):
 
 
 class OwnedModelMixin:
-    """
-    Mixin que restringe querysets ao usuário autenticado.
-    Aplicar em todo ViewSet que lida com dados financeiros.
-    """
+    """Restringe querysets ao usuário autenticado."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
@@ -84,7 +83,7 @@ class ExpenseViewSet(OwnedModelMixin, viewsets.ModelViewSet):
 
 class SummaryView(views.APIView):
     """
-    GET /api/finance/summary/?month=2024-03
+    GET /api/finance/summary/?month=YYYY-MM
     Retorna totais de receitas, despesas e saldo do período.
     """
     permission_classes = [permissions.IsAuthenticated]
@@ -130,41 +129,117 @@ class SummaryView(views.APIView):
         return response.Response(serializer.data)
 
 
+# ── Fechamento de caixa ─────────────────────────────────────────────────────
+
+PAYMENT_METHOD_LABELS = dict(TransactionBase.PaymentMethod.choices)
+
+
+def _group_by_payment(queryset):
+    """
+    Recebe um queryset de Income ou Expense e retorna lista
+    [{payment_method, payment_method_display, total, count}]
+    ordenada pelo maior total.
+    """
+    rows = (
+        queryset
+        .values("payment_method")
+        .annotate(total=Sum("amount"), count=Count("id"))
+        .order_by("-total")
+    )
+    return [
+        {
+            "payment_method": r["payment_method"],
+            "payment_method_display": PAYMENT_METHOD_LABELS.get(
+                r["payment_method"], r["payment_method"]
+            ),
+            "total": r["total"] or Decimal("0"),
+            "count": r["count"],
+        }
+        for r in rows
+    ]
+
+
+class CashCloseView(views.APIView):
+    """
+    GET /api/finance/cash-close/?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+
+    Fechamento de caixa: agrupa receitas e despesas por forma de pagamento.
+    Se start_date/end_date não informados, usa o mês atual.
+
+    Exemplo de resposta:
+    {
+      "period_start": "2026-05-01",
+      "period_end":   "2026-05-31",
+      "total_income":  5000.00,
+      "total_expense": 2300.00,
+      "balance":       2700.00,
+      "income_by_payment": [
+        {"payment_method": "pix",      "payment_method_display": "PIX",      "total": 3000.00, "count": 12},
+        {"payment_method": "dinheiro", "payment_method_display": "Dinheiro", "total": 2000.00, "count": 8}
+      ],
+      "expense_by_payment": [
+        {"payment_method": "credito",  "payment_method_display": "Crédito",  "total": 1500.00, "count": 5},
+        {"payment_method": "pix",      "payment_method_display": "PIX",      "total":  800.00, "count": 3}
+      ]
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("start_date", OpenApiTypes.DATE, required=False,
+                             description="Data inicial (YYYY-MM-DD). Padrão: 1º do mês atual."),
+            OpenApiParameter("end_date", OpenApiTypes.DATE, required=False,
+                             description="Data final (YYYY-MM-DD). Padrão: último dia do mês atual."),
+        ],
+        responses={200: CashCloseSerializer},
+    )
+    def get(self, request):
+        start, end = _parse_date_range(request)
+        if start is None:
+            return response.Response(
+                {"detail": "Datas inválidas. Use o formato YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        incomes = Income.objects.filter(user=user, date__range=(start, end))
+        expenses = Expense.objects.filter(user=user, date__range=(start, end))
+
+        total_income = incomes.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+        total_expense = expenses.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+
+        data = {
+            "period_start": start,
+            "period_end": end,
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "balance": total_income - total_expense,
+            "income_by_payment": _group_by_payment(incomes),
+            "expense_by_payment": _group_by_payment(expenses),
+        }
+        serializer = CashCloseSerializer(data)
+        return response.Response(serializer.data)
+
+
 # ── Exportação de relatórios ────────────────────────────────────────────────
 
 def _resolve_target_user(request):
-    """
-    Resolve qual usuário usar nos relatórios:
-    - Admin pode passar ?user={id} pra exportar dados de outro
-    - Usuário comum sempre exporta os próprios dados
-    Retorna o User ou None se o ?user= for inválido.
-    """
     user_id = request.query_params.get("user")
-
     if not user_id:
         return request.user
-
     if getattr(request.user, "role", None) != User.Role.ADMIN:
         return request.user
-
     return User.objects.filter(pk=user_id).first()
 
 
 def _parse_date_range(request):
-    """
-    Lê start_date e end_date da querystring (formato YYYY-MM-DD).
-    Se não vier, usa o mês atual.
-    """
     today = timezone.now().date()
     start_str = request.query_params.get("start_date")
     end_str = request.query_params.get("end_date")
 
     try:
-        if start_str:
-            start = date.fromisoformat(start_str)
-        else:
-            start = today.replace(day=1)
-
+        start = date.fromisoformat(start_str) if start_str else today.replace(day=1)
         if end_str:
             end = date.fromisoformat(end_str)
         else:
@@ -177,9 +252,6 @@ def _parse_date_range(request):
 
 
 def _build_yearly_summary(user, year):
-    """
-    Constrói o resumo mensal do ano (jan..dez) pra um usuário.
-    """
     months = []
     total_in = 0
     total_out = 0
@@ -191,13 +263,11 @@ def _build_yearly_summary(user, year):
 
         income = (
             Income.objects.filter(user=user, date__range=(start, end))
-            .aggregate(total=Sum("amount"))["total"]
-            or 0
+            .aggregate(total=Sum("amount"))["total"] or 0
         )
         expense = (
             Expense.objects.filter(user=user, date__range=(start, end))
-            .aggregate(total=Sum("amount"))["total"]
-            or 0
+            .aggregate(total=Sum("amount"))["total"] or 0
         )
 
         months.append({
@@ -206,25 +276,16 @@ def _build_yearly_summary(user, year):
             "expense": float(expense),
             "balance": float(income - expense),
         })
-
         total_in += float(income)
         total_out += float(expense)
 
     return {
         "months": months,
-        "totals": {
-            "income": total_in,
-            "expense": total_out,
-            "balance": total_in - total_out,
-        },
+        "totals": {"income": total_in, "expense": total_out, "balance": total_in - total_out},
     }
 
 
 class TransactionsCSVReportView(views.APIView):
-    """
-    GET /api/finance/reports/transactions.csv
-    Exporta receitas e despesas em CSV (abre no Excel).
-    """
     permission_classes = [permissions.IsAuthenticated]
     renderer_classes = [PassthroughRenderer]
 
@@ -232,41 +293,29 @@ class TransactionsCSVReportView(views.APIView):
         parameters=[
             OpenApiParameter("start_date", OpenApiTypes.DATE, required=False),
             OpenApiParameter("end_date", OpenApiTypes.DATE, required=False),
-            OpenApiParameter("user", OpenApiTypes.INT, required=False, description="ID do usuário (só admin)"),
+            OpenApiParameter("user", OpenApiTypes.INT, required=False),
         ],
         responses={(200, "text/csv"): OpenApiTypes.BINARY},
     )
     def get(self, request):
         target_user = _resolve_target_user(request)
         if target_user is None:
-            return response.Response(
-                {"detail": "Usuário não encontrado."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return response.Response({"detail": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         start, end = _parse_date_range(request)
         if start is None:
-            return response.Response(
-                {"detail": "Datas inválidas. Use o formato YYYY-MM-DD."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return response.Response({"detail": "Datas inválidas."}, status=status.HTTP_400_BAD_REQUEST)
 
         incomes = Income.objects.filter(user=target_user, date__range=(start, end))
         expenses = Expense.objects.filter(user=target_user, date__range=(start, end))
-
         content = generate_transactions_csv(incomes, expenses)
 
-        filename = f"transacoes_{start.isoformat()}_a_{end.isoformat()}.csv"
         resp = HttpResponse(content, content_type="text/csv; charset=utf-8")
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp["Content-Disposition"] = f'attachment; filename="transacoes_{start}_{end}.csv"'
         return resp
 
 
 class TransactionsPDFReportView(views.APIView):
-    """
-    GET /api/finance/reports/transactions.pdf
-    Mesmo que o CSV, mas em PDF.
-    """
     permission_classes = [permissions.IsAuthenticated]
     renderer_classes = [PassthroughRenderer]
 
@@ -274,63 +323,44 @@ class TransactionsPDFReportView(views.APIView):
         parameters=[
             OpenApiParameter("start_date", OpenApiTypes.DATE, required=False),
             OpenApiParameter("end_date", OpenApiTypes.DATE, required=False),
-            OpenApiParameter("user", OpenApiTypes.INT, required=False, description="ID do usuário (só admin)"),
+            OpenApiParameter("user", OpenApiTypes.INT, required=False),
         ],
         responses={(200, "application/pdf"): OpenApiTypes.BINARY},
     )
     def get(self, request):
         target_user = _resolve_target_user(request)
         if target_user is None:
-            return response.Response(
-                {"detail": "Usuário não encontrado."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return response.Response({"detail": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         start, end = _parse_date_range(request)
         if start is None:
-            return response.Response(
-                {"detail": "Datas inválidas. Use o formato YYYY-MM-DD."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return response.Response({"detail": "Datas inválidas."}, status=status.HTTP_400_BAD_REQUEST)
 
         incomes = Income.objects.filter(user=target_user, date__range=(start, end))
         expenses = Expense.objects.filter(user=target_user, date__range=(start, end))
-
         pdf_bytes = generate_transactions_pdf(target_user, incomes, expenses, start, end)
 
-        filename = f"transacoes_{start.isoformat()}_a_{end.isoformat()}.pdf"
         resp = HttpResponse(pdf_bytes, content_type="application/pdf")
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp["Content-Disposition"] = f'attachment; filename="transacoes_{start}_{end}.pdf"'
         return resp
 
 
 class SummaryCSVReportView(views.APIView):
-    """
-    GET /api/finance/reports/summary.csv
-    Resumo mensal do ano inteiro (12 linhas).
-    """
     permission_classes = [permissions.IsAuthenticated]
     renderer_classes = [PassthroughRenderer]
 
     @extend_schema(
-        parameters=[
-            OpenApiParameter("year", OpenApiTypes.INT, required=False),
-            OpenApiParameter("user", OpenApiTypes.INT, required=False, description="ID do usuário (só admin)"),
-        ],
+        parameters=[OpenApiParameter("year", OpenApiTypes.INT, required=False),
+                    OpenApiParameter("user", OpenApiTypes.INT, required=False)],
         responses={(200, "text/csv"): OpenApiTypes.BINARY},
     )
     def get(self, request):
         target_user = _resolve_target_user(request)
         if target_user is None:
-            return response.Response(
-                {"detail": "Usuário não encontrado."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return response.Response({"detail": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         year = int(request.query_params.get("year") or timezone.now().year)
-        summary_data = _build_yearly_summary(target_user, year)
-
-        content = generate_summary_csv(summary_data)
+        content = generate_summary_csv(_build_yearly_summary(target_user, year))
 
         resp = HttpResponse(content, content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="resumo_{year}.csv"'
@@ -338,32 +368,21 @@ class SummaryCSVReportView(views.APIView):
 
 
 class SummaryPDFReportView(views.APIView):
-    """
-    GET /api/finance/reports/summary.pdf
-    Mesmo resumo mensal, em PDF.
-    """
     permission_classes = [permissions.IsAuthenticated]
     renderer_classes = [PassthroughRenderer]
 
     @extend_schema(
-        parameters=[
-            OpenApiParameter("year", OpenApiTypes.INT, required=False),
-            OpenApiParameter("user", OpenApiTypes.INT, required=False, description="ID do usuário (só admin)"),
-        ],
+        parameters=[OpenApiParameter("year", OpenApiTypes.INT, required=False),
+                    OpenApiParameter("user", OpenApiTypes.INT, required=False)],
         responses={(200, "application/pdf"): OpenApiTypes.BINARY},
     )
     def get(self, request):
         target_user = _resolve_target_user(request)
         if target_user is None:
-            return response.Response(
-                {"detail": "Usuário não encontrado."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return response.Response({"detail": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         year = int(request.query_params.get("year") or timezone.now().year)
-        summary_data = _build_yearly_summary(target_user, year)
-
-        pdf_bytes = generate_summary_pdf(target_user, summary_data, year)
+        pdf_bytes = generate_summary_pdf(target_user, _build_yearly_summary(target_user, year), year)
 
         resp = HttpResponse(pdf_bytes, content_type="application/pdf")
         resp["Content-Disposition"] = f'attachment; filename="resumo_{year}.pdf"'
